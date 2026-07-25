@@ -17,7 +17,7 @@ binding = "ASSETS"
 # npx wrangler kv namespace create VLESS_USERS
 [[kv_namespaces]]
 binding = "VLESS_USERS"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "c636ec79f8ed4a96adf81100530f45cd"
 
 # این‌ها را به صورت Secret تنظیم کنید (در این فایل ننویسید):
 # npx wrangler secret put ADMIN_PASSWORD
