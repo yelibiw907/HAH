@@ -984,6 +984,7 @@ table.data-table{ width:100%; border-collapse:collapse; min-width:640px; }
         </div>
         <div class="field"><label>نام / ریمارک</label><input type="text" id="mName" placeholder="مثلاً: علی رضایی"></div>
         <div class="field"><label>محدودیت ترافیک (GB) — صفر یعنی نامحدود</label><input type="number" id="mLimit" placeholder="۵۰"></div>
+        <div class="field"><label>محدودیت روزانه ریکوئست — صفر یعنی نامحدود</label><input type="number" id="mDailyLimit" placeholder="مثلاً ۵۰۰"></div>
         <div class="field" style="margin-bottom:0"><label>تاریخ انقضا</label><input type="date" id="mExpiry"></div>
         <div class="modal-foot">
             <button class="btn btn-ghost" id="modalCancel">انصراف</button>
@@ -1203,10 +1204,13 @@ function expiryText(u){
     return `<span class="mono">${toFa(days)} روز دیگر</span>`;
 }
 function clientRow(c, withActions=true){
+    const dailyText = c.dailyRequestLimit > 0
+        ? ` · ${toFa(c.dailyRequestsUsed || 0)}/${toFa(c.dailyRequestLimit)} ریکوئست امروز`
+        : '';
     return `<tr>
         <td><div class="client-cell">
             <div class="client-avatar">${c.initials}</div>
-            <div><div class="client-name">${c.name}</div><div class="client-email">${c.trafficLimitGB > 0 ? c.trafficLimitGB+' GB سقف' : 'نامحدود'}</div></div>
+            <div><div class="client-name">${c.name}</div><div class="client-email">${c.trafficLimitGB > 0 ? c.trafficLimitGB+' GB سقف' : 'نامحدود'}${dailyText}</div></div>
         </div></td>
         <td>${statusBadge(c.status)}</td>
         <td><div style="display:flex;align-items:center;gap:8px;">
@@ -1318,10 +1322,11 @@ function openModal(uuid){
         qs('.modal-head h3').textContent = 'ویرایش کاربر';
         qs('#mName').value = c.name || '';
         qs('#mLimit').value = c.trafficLimitGB || '';
+        qs('#mDailyLimit').value = c.dailyRequestLimit || '';
         qs('#mExpiry').value = c.expireAt ? c.expireAt.split('T')[0] : '';
     } else {
         qs('.modal-head h3').textContent = 'افزودن کاربر جدید';
-        ['mName','mLimit','mExpiry'].forEach(id => qs('#'+id).value = '');
+        ['mName','mLimit','mDailyLimit','mExpiry'].forEach(id => qs('#'+id).value = '');
     }
     clientModal.classList.add('open');
 }
@@ -1333,19 +1338,20 @@ clientModal.addEventListener('click', e => { if(e.target === clientModal) closeM
 qs('#modalCreate').addEventListener('click', async () => {
     const name = qs('#mName').value.trim() || 'کاربر جدید';
     const trafficLimitGB = Number(qs('#mLimit').value) || 0;
+    const dailyRequestLimit = Number(qs('#mDailyLimit').value) || 0;
     const expireDate = qs('#mExpiry').value;
     const expireAt = expireDate ? new Date(expireDate).toISOString() : null;
 
     if(editingUuid){
         await fetch('/api/users/' + editingUuid, {
             method:'PUT', headers:{'content-type':'application/json'},
-            body: JSON.stringify({ name, trafficLimitGB, expireAt })
+            body: JSON.stringify({ name, trafficLimitGB, dailyRequestLimit, expireAt })
         });
         showToast(`کاربر «${name}» ویرایش شد`);
     } else {
         await fetch('/api/users', {
             method:'POST', headers:{'content-type':'application/json'},
-            body: JSON.stringify({ name, trafficLimitGB, expireAt })
+            body: JSON.stringify({ name, trafficLimitGB, dailyRequestLimit, expireAt })
         });
         showToast(`کاربر «${name}» ایجاد شد`);
     }
