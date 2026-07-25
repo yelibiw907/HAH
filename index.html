@@ -1,0 +1,1772 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Hadi Panel - داشبورد مدیریت</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============ Tokens ============ */
+:root{
+    --bg:#090909;
+    --card:#181818;
+    --card-2:#1e1e1e;
+    --border:#2D2D2D;
+    --gold:#FFD54F;
+    --gold-dark:#C7A225;
+    --text:#FFFFFF;
+    --text-2:#a8a8a8;
+    --text-3:#6f6f6f;
+    --danger:#ef5a6f;
+    --success:#3ddc97;
+    --radius-lg:18px;
+    --radius-md:14px;
+    --radius-sm:10px;
+    --sidebar-w:252px;
+    --sidebar-w-collapsed:84px;
+    --topbar-h:68px;
+    --ease:cubic-bezier(.22,.9,.32,1);
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{ height:100%; }
+body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Vazirmatn',sans-serif;
+    overflow-x:hidden;
+}
+.mono{ font-family:'JetBrains Mono',ui-monospace,monospace; }
+a{ text-decoration:none; color:inherit; }
+button{ font-family:inherit; cursor:pointer; }
+::-webkit-scrollbar{ width:6px; height:6px; }
+::-webkit-scrollbar-thumb{ background:rgba(255,213,79,.28); border-radius:10px; }
+::-webkit-scrollbar-thumb:hover{ background:rgba(255,213,79,.5); }
+::-webkit-scrollbar-track{ background:transparent; }
+:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; border-radius:6px; }
+
+@media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{ animation-duration:.001s !important; transition-duration:.001s !important; }
+}
+
+/* ============ Ambient backdrop ============ */
+.ambient{ position:fixed; inset:0; z-index:0; pointer-events:none; }
+.ambient::before{
+    content:''; position:absolute; top:-20%; right:-10%; width:60%; height:55%;
+    background:radial-gradient(ellipse at center, rgba(255,213,79,.10), transparent 70%);
+}
+.ambient::after{
+    content:''; position:absolute; inset:0;
+    background-image:
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size:46px 46px;
+    mask-image:radial-gradient(ellipse 65% 50% at 50% 0%, black, transparent 78%);
+}
+
+/* ============ Loader ============ */
+#loader{
+    position:fixed; inset:0; z-index:999; background:var(--bg);
+    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:16px;
+    transition:opacity .5s var(--ease), visibility .5s var(--ease);
+}
+#loader.hide{ opacity:0; visibility:hidden; }
+.loader-mark{
+    width:56px; height:56px; border-radius:14px; background:var(--text); position:relative;
+    display:flex; align-items:center; justify-content:center;
+    animation:loaderPulse 1.1s ease-in-out infinite;
+}
+.loader-mark span{ font-weight:800; font-size:1.6rem; color:var(--bg); font-family:'JetBrains Mono',monospace; }
+@keyframes loaderPulse{
+    0%,100%{ box-shadow:0 0 0 0 rgba(255,213,79,.35); transform:scale(1); }
+    50%{ box-shadow:0 0 0 14px rgba(255,213,79,0); transform:scale(1.04); }
+}
+.loader-bar{ width:120px; height:2px; background:var(--border); border-radius:2px; overflow:hidden; }
+.loader-bar span{ display:block; height:100%; width:40%; background:linear-gradient(90deg,var(--gold-dark),var(--gold)); animation:loaderSlide 1.1s ease-in-out infinite; }
+@keyframes loaderSlide{ 0%{ transform:translateX(-120%);} 100%{ transform:translateX(340%);} }
+
+/* ============ Reveal ============ */
+@keyframes fadeInUp{ from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:translateY(0);} }
+.reveal{ animation:fadeInUp .5s var(--ease) both; }
+
+/* ============ Shell ============ */
+.shell{ position:relative; z-index:1; display:flex; min-height:100vh; }
+
+/* ---- Sidebar ---- */
+.sidebar{
+    width:var(--sidebar-w); flex-shrink:0; height:100vh; position:sticky; top:0;
+    background:var(--card); border-left:1px solid var(--border);
+    display:flex; flex-direction:column; padding:20px 14px;
+    transition:width .35s var(--ease), transform .35s var(--ease);
+    z-index:50;
+}
+.brand{ display:flex; align-items:center; gap:10px; padding:6px 8px 22px; }
+.brand-mark{ width:38px; height:38px; border-radius:10px; background:var(--bg); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.brand-mark span{ color:var(--gold); font-weight:800; font-size:1.15rem; font-family:'JetBrains Mono',monospace; }
+.brand-name{ font-weight:700; font-size:1rem; white-space:nowrap; overflow:hidden; }
+.brand-name b{ color:var(--gold); font-weight:800; }
+.brand-sub{ font-size:10.5px; color:var(--text-3); white-space:nowrap; }
+
+.nav{ position:relative; display:flex; flex-direction:column; gap:3px; margin-top:6px; }
+.nav-indicator{
+    position:absolute; right:0; width:100%; height:44px; border-radius:12px;
+    background:linear-gradient(135deg, rgba(255,213,79,.16), rgba(255,213,79,.05));
+    border:1px solid rgba(255,213,79,.35);
+    transition:transform .38s var(--ease); pointer-events:none; z-index:0;
+}
+.nav-item{
+    position:relative; z-index:1; display:flex; align-items:center; gap:12px;
+    padding:11px 14px; border-radius:12px; color:var(--text-2); font-size:13px; font-weight:500;
+    transition:color .2s ease; white-space:nowrap; overflow:hidden;
+}
+.nav-item i{ width:18px; text-align:center; font-size:15px; flex-shrink:0; color:inherit; }
+.nav-item:hover{ color:var(--text); }
+.nav-item.active{ color:var(--gold); }
+.nav-item .label{ overflow:hidden; text-overflow:ellipsis; }
+.nav-badge{ margin-right:auto; background:rgba(255,213,79,.14); color:var(--gold); font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; }
+
+.nav-divider{ height:1px; background:var(--border); margin:14px 4px; }
+.sidebar-footer{ margin-top:auto; display:flex; flex-direction:column; gap:3px; }
+.collapse-btn{
+    display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+    padding:9px; border-radius:10px; background:transparent; border:1px solid var(--border); color:var(--text-3);
+    font-size:11.5px; transition:.2s;
+}
+.collapse-btn:hover{ border-color:var(--gold-dark); color:var(--gold); }
+
+/* Collapsed state (desktop rail) */
+.shell.collapsed .sidebar{ width:var(--sidebar-w-collapsed); }
+.shell.collapsed .brand-name,
+.shell.collapsed .brand-sub,
+.shell.collapsed .nav-item .label,
+.shell.collapsed .nav-badge,
+.shell.collapsed .collapse-btn span{ display:none; }
+.shell.collapsed .brand{ justify-content:center; padding-inline:0; }
+.shell.collapsed .nav-item{ justify-content:center; }
+.shell.collapsed .collapse-btn i{ transform:rotate(180deg); }
+
+/* ---- Main ---- */
+.main{ flex:1; min-width:0; display:flex; flex-direction:column; }
+
+.topbar{
+    height:var(--topbar-h); position:sticky; top:0; z-index:40;
+    background:rgba(9,9,9,.78); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--border);
+    display:flex; align-items:center; gap:14px; padding:0 22px;
+}
+.menu-btn{ display:none; background:var(--card); border:1px solid var(--border); color:var(--text); width:38px; height:38px; border-radius:10px; align-items:center; justify-content:center; font-size:14px; }
+.rail-btn{ background:var(--card); border:1px solid var(--border); color:var(--text-2); width:38px; height:38px; border-radius:10px; align-items:center; justify-content:center; font-size:13px; display:flex; transition:.2s; }
+.rail-btn:hover{ color:var(--gold); border-color:var(--gold-dark); }
+.page-title{ font-size:15px; font-weight:700; }
+.page-crumb{ font-size:11px; color:var(--text-3); margin-top:1px; }
+
+.search-box{ position:relative; margin-right:auto; width:280px; max-width:38vw; }
+.search-box i{ position:absolute; right:13px; top:50%; transform:translateY(-50%); color:var(--text-3); font-size:12px; }
+.search-box input{
+    width:100%; background:var(--card); border:1px solid var(--border); color:var(--text);
+    padding:9px 36px 9px 12px; border-radius:10px; font-size:12.5px; font-family:inherit; transition:.2s;
+}
+.search-box input:focus{ border-color:var(--gold-dark); background:var(--card-2); }
+.search-box input::placeholder{ color:var(--text-3); }
+
+.topbar-actions{ display:flex; align-items:center; gap:10px; }
+.icon-btn{ position:relative; background:var(--card); border:1px solid var(--border); color:var(--text-2); width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:14px; transition:.2s; }
+.icon-btn:hover{ color:var(--gold); border-color:var(--gold-dark); }
+.dot{ position:absolute; top:7px; left:8px; width:7px; height:7px; border-radius:50%; background:var(--danger); border:2px solid var(--card); }
+
+.user-chip{ display:flex; align-items:center; gap:9px; padding:5px 10px 5px 6px; border-radius:12px; border:1px solid var(--border); background:var(--card); cursor:pointer; transition:.2s; }
+.user-chip:hover{ border-color:var(--gold-dark); }
+.avatar{ width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,var(--gold),var(--gold-dark)); display:flex; align-items:center; justify-content:center; color:#0a0a0a; font-weight:800; font-size:12px; flex-shrink:0; }
+.user-meta{ line-height:1.15; }
+.user-name{ font-size:12px; font-weight:600; }
+.user-role{ font-size:10px; color:var(--text-3); }
+
+.dropdown{ position:relative; }
+.dropdown-menu{ position:absolute; top:calc(100% + 10px); left:0; min-width:180px; background:var(--card-2); border:1px solid var(--border); border-radius:14px; padding:6px; z-index:60; display:none; box-shadow:0 20px 40px -14px rgba(0,0,0,.6); }
+.dropdown-menu.open{ display:block; animation:fadeInUp .18s ease both; }
+.dd-item{ display:flex; align-items:center; gap:9px; padding:9px 11px; border-radius:9px; font-size:12px; color:var(--text-2); transition:.15s; }
+.dd-item i{ width:14px; text-align:center; font-size:12px; }
+.dd-item:hover{ background:rgba(255,213,79,.08); color:var(--gold); }
+.dd-item.danger:hover{ background:rgba(239,90,111,.1); color:var(--danger); }
+.dd-sep{ height:1px; background:var(--border); margin:5px 4px; }
+
+/* ---- Content ---- */
+.content{ padding:24px; max-width:1400px; width:100%; margin:0 auto; }
+.view{ display:none; }
+.view.active{ display:block; animation:fadeInUp .45s var(--ease) both; }
+
+.section-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:14px; margin-bottom:18px; flex-wrap:wrap; }
+.section-title{ font-size:16px; font-weight:700; }
+.section-sub{ font-size:12px; color:var(--text-3); margin-top:3px; }
+
+/* ---- Cards ---- */
+.card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg); position:relative; transition:border-color .25s ease, transform .25s ease; }
+.card:hover{ border-color:rgba(255,213,79,.3); }
+.card-pad{ padding:20px; }
+
+/* Stat cards */
+.stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px; }
+.stat-card{ padding:18px 20px; }
+.stat-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.stat-icon{ width:36px; height:36px; border-radius:10px; background:rgba(255,213,79,.1); color:var(--gold); display:flex; align-items:center; justify-content:center; font-size:14px; }
+.stat-trend{ font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px; }
+.stat-trend.up{ color:var(--success); background:rgba(61,220,151,.1); }
+.stat-trend.down{ color:var(--danger); background:rgba(239,90,111,.1); }
+.stat-value{ font-size:24px; font-weight:800; font-family:'JetBrains Mono',monospace; letter-spacing:-.3px; }
+.stat-label{ font-size:11.5px; color:var(--text-3); margin-top:5px; }
+
+/* Charts row */
+.charts-row{ display:grid; grid-template-columns:1.6fr 1fr; gap:16px; margin-bottom:20px; align-items:stretch; }
+.card-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+.card-head h3{ font-size:13.5px; font-weight:700; margin:0; }
+.card-head p{ font-size:11px; color:var(--text-3); margin:2px 0 0; }
+.pill-toggle{ display:flex; background:var(--bg); border:1px solid var(--border); border-radius:9px; padding:3px; gap:2px; }
+.pill-toggle button{ background:transparent; border:none; color:var(--text-3); font-size:10.5px; font-weight:600; padding:5px 11px; border-radius:7px; transition:.2s; font-family:inherit; }
+.pill-toggle button.active{ background:var(--gold); color:#0a0a0a; }
+
+.legend{ display:flex; flex-wrap:wrap; gap:10px 16px; margin-top:14px; }
+.legend-item{ display:flex; align-items:center; gap:7px; font-size:11px; color:var(--text-2); }
+.legend-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+/* Tables */
+.table-wrap{ overflow-x:auto; }
+table.data-table{ width:100%; border-collapse:collapse; min-width:640px; }
+.data-table th{ text-align:right; font-size:10.5px; color:var(--text-3); font-weight:600; padding:0 14px 12px; letter-spacing:.3px; }
+.data-table td{ padding:13px 14px; font-size:12.5px; border-top:1px solid var(--border); vertical-align:middle; }
+.data-table tr td:first-child, .data-table th:first-child{ padding-right:4px; }
+.client-cell{ display:flex; align-items:center; gap:10px; }
+.client-avatar{ width:32px; height:32px; border-radius:9px; background:var(--card-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:var(--gold); flex-shrink:0; }
+.client-name{ font-weight:600; font-size:12.5px; }
+.client-email{ font-size:10.5px; color:var(--text-3); font-family:'JetBrains Mono',monospace; }
+
+.badge{ display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; padding:4px 10px; border-radius:999px; }
+.badge.active{ color:var(--success); background:rgba(61,220,151,.1); }
+.badge.expired{ color:var(--danger); background:rgba(239,90,111,.1); }
+.badge.paused{ color:#e8b93f; background:rgba(232,185,63,.1); }
+.badge i{ font-size:6px; }
+
+.mini-bar{ width:90px; height:6px; border-radius:99px; background:var(--bg); border:1px solid var(--border); overflow:hidden; }
+.mini-bar span{ display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,var(--gold-dark),var(--gold)); }
+
+.row-actions{ display:flex; gap:6px; }
+.act-btn{ width:28px; height:28px; border-radius:8px; background:var(--bg); border:1px solid var(--border); color:var(--text-3); display:flex; align-items:center; justify-content:center; font-size:11px; transition:.2s; }
+.act-btn:hover{ color:var(--gold); border-color:var(--gold-dark); }
+.act-btn.danger:hover{ color:var(--danger); border-color:var(--danger); }
+
+/* skeleton */
+.skel{ position:relative; overflow:hidden; background:var(--card-2); border-radius:8px; }
+.skel::after{
+    content:''; position:absolute; inset:0; transform:translateX(-100%);
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent);
+    animation:shimmer 1.5s infinite;
+}
+@keyframes shimmer{ 100%{ transform:translateX(100%); } }
+
+/* Buttons */
+.btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:12.5px; font-weight:600; padding:10px 16px; border-radius:11px; border:1px solid transparent; transition:.2s; font-family:inherit; }
+.btn-gold{ background:linear-gradient(135deg,var(--gold),var(--gold-dark)); color:#0a0a0a; box-shadow:0 8px 20px -8px rgba(255,213,79,.5); }
+.btn-gold:hover{ transform:translateY(-1px); box-shadow:0 12px 24px -8px rgba(255,213,79,.65); }
+.btn-ghost{ background:var(--card-2); border-color:var(--border); color:var(--text-2); }
+.btn-ghost:hover{ border-color:var(--gold-dark); color:var(--gold); }
+
+.toolbar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.select-box, .input-box{ background:var(--bg); border:1px solid var(--border); color:var(--text); padding:9px 12px; border-radius:10px; font-size:12px; font-family:inherit; }
+.input-box::placeholder{ color:var(--text-3); }
+
+/* Stat mini row (statistics view) */
+.mini-stat{ display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:13px; background:var(--card-2); border:1px solid var(--border); }
+.mini-stat .stat-icon{ width:32px; height:32px; font-size:12px; }
+.mini-stat .v{ font-size:15px; font-weight:800; font-family:'JetBrains Mono',monospace; }
+.mini-stat .l{ font-size:10.5px; color:var(--text-3); }
+
+/* Settings */
+.settings-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.field{ margin-bottom:14px; }
+.field label{ display:block; font-size:11.5px; color:var(--text-2); margin-bottom:7px; font-weight:600; }
+.field input, .field select{ width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px 12px; border-radius:10px; font-size:12.5px; font-family:inherit; transition:.2s; }
+.field input:focus, .field select:focus{ border-color:var(--gold-dark); }
+.switch-row{ display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-top:1px solid var(--border); }
+.switch-row:first-child{ border-top:none; }
+.switch-row .t{ font-size:12.5px; font-weight:600; }
+.switch-row .d{ font-size:10.5px; color:var(--text-3); margin-top:2px; }
+.switch{ position:relative; width:42px; height:24px; border-radius:99px; background:var(--border); flex-shrink:0; transition:.25s; }
+.switch::after{ content:''; position:absolute; top:3px; right:3px; width:18px; height:18px; border-radius:50%; background:var(--text-2); transition:.25s var(--ease); }
+.switch.on{ background:rgba(255,213,79,.25); }
+.switch.on::after{ background:var(--gold); transform:translateX(-18px); }
+
+/* Modal */
+.modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(4px); z-index:100; display:none; align-items:center; justify-content:center; padding:20px; }
+.modal-overlay.open{ display:flex; animation:fadeInUp .2s ease both; }
+.modal{ width:100%; max-width:440px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-lg); padding:22px; transform:scale(.96); animation:modalIn .25s var(--ease) forwards; }
+@keyframes modalIn{ to{ transform:scale(1); } }
+.modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+.modal-head h3{ font-size:14px; font-weight:700; margin:0; }
+.modal-close{ width:30px; height:30px; border-radius:9px; background:var(--bg); border:1px solid var(--border); color:var(--text-2); display:flex; align-items:center; justify-content:center; }
+.modal-foot{ display:flex; gap:10px; margin-top:18px; }
+.modal-foot .btn{ flex:1; }
+
+/* Toast */
+.toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--card-2); border:1px solid rgba(255,213,79,.3); color:var(--text); padding:12px 20px; border-radius:12px; font-size:12.5px; font-weight:600; z-index:200; display:flex; align-items:center; gap:10px; opacity:0; pointer-events:none; transition:.3s var(--ease); box-shadow:0 20px 40px -14px rgba(0,0,0,.6); }
+.toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+.toast i{ color:var(--gold); }
+
+/* Mobile drawer backdrop */
+.backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:45; display:none; }
+.backdrop.show{ display:block; }
+
+/* ============ Welcome / status card ============ */
+.welcome-card{ padding:22px 24px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:20px; }
+.gauge-row{ display:flex; align-items:center; gap:28px; flex-wrap:wrap; }
+.gauge{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+.gauge svg{ display:block; }
+.gauge-val{ font-family:'JetBrains Mono',monospace; font-weight:800; font-size:15px; fill:var(--text); }
+.gauge-label{ font-size:11px; color:var(--text-2); text-align:center; }
+.gauge-sub{ font-size:9.5px; color:var(--text-3); text-align:center; margin-top:-4px; }
+.welcome-hello{ font-size:18px; font-weight:800; }
+.welcome-sub{ font-size:12px; color:var(--text-3); margin-top:4px; }
+.xray-box{ background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px 18px; display:flex; flex-direction:column; gap:10px; min-width:230px; }
+.xray-box-top{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.xray-id{ display:flex; align-items:center; gap:10px; }
+.xray-id-icon{ width:34px; height:34px; border-radius:9px; background:rgba(255,213,79,.12); color:var(--gold); display:flex; align-items:center; justify-content:center; font-size:14px; }
+.xray-id .n{ font-weight:700; font-size:13px; }
+.xray-status-live{ display:flex; align-items:center; gap:6px; font-size:11px; color:var(--success); font-weight:600; }
+.xray-status-live i{ font-size:7px; }
+.xray-box-actions{ display:flex; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid var(--border); padding-top:10px; font-size:11px; color:var(--text-2); }
+.xray-box-actions .xa{ display:flex; align-items:center; gap:6px; transition:.2s; }
+.xray-box-actions .xa:hover{ color:var(--gold); }
+
+/* ============ Six-up stat row ============ */
+.stat-grid-6{ display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:20px; }
+.stat-card-sm{ padding:16px; display:flex; align-items:center; gap:12px; }
+.stat-card-sm .stat-icon{ width:38px; height:38px; }
+.stat-card-sm .v{ font-size:16px; font-weight:800; font-family:'JetBrains Mono',monospace; }
+.stat-card-sm .l{ font-size:10.5px; color:var(--text-3); margin-top:2px; }
+.stat-card-sm .v.ok{ color:var(--success); }
+.stat-card-sm .v.gold-link{ color:var(--gold); }
+
+/* ============ Resource bars card ============ */
+.resource-list{ display:flex; flex-direction:column; gap:16px; }
+.resource-row .rr-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:7px; font-size:12px; }
+.resource-row .rr-top span:first-child{ color:var(--text-2); font-weight:600; }
+.resource-row .rr-top span:last-child{ font-family:'JetBrains Mono',monospace; font-weight:700; }
+.res-bar{ width:100%; height:7px; border-radius:99px; background:var(--bg); border:1px solid var(--border); overflow:hidden; }
+.res-bar span{ display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,var(--gold-dark),var(--gold)); }
+
+/* ============ Active connections / map card ============ */
+.conn-map{ position:relative; height:150px; border-radius:var(--radius-md); background:var(--card-2); border:1px solid var(--border); overflow:hidden; margin-top:14px; }
+.conn-map svg{ width:100%; height:100%; }
+.conn-nums{ display:flex; gap:26px; }
+.conn-num .v{ font-size:26px; font-weight:800; font-family:'JetBrains Mono',monospace; }
+.conn-num .l{ font-size:11px; color:var(--text-3); display:flex; align-items:center; gap:6px; margin-top:2px; }
+
+/* ============ Activity list ============ */
+.activity-list{ display:flex; flex-direction:column; }
+.activity-item{ display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--border); }
+.activity-item:first-child{ border-top:none; padding-top:2px; }
+.activity-icon{ width:32px; height:32px; border-radius:9px; background:var(--card-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--gold); flex-shrink:0; }
+.activity-text{ font-size:12.5px; font-weight:600; flex:1; }
+.activity-time{ font-size:10.5px; color:var(--text-3); font-family:'JetBrains Mono',monospace; display:flex; align-items:center; gap:7px; }
+.activity-time i{ font-size:6px; }
+
+/* ============ Sidebar submenu ============ */
+.nav-group .nav-item{ justify-content:space-between; }
+.nav-group .nav-item .ng-left{ display:flex; align-items:center; gap:12px; }
+.nav-group .nav-item .chev{ font-size:10px; transition:transform .25s var(--ease); color:var(--text-3); }
+.nav-group.open > .nav-item .chev{ transform:rotate(-90deg); }
+.nav-submenu{ max-height:0; overflow:hidden; transition:max-height .3s var(--ease); display:flex; flex-direction:column; gap:1px; padding-right:14px; }
+.nav-group.open .nav-submenu{ max-height:220px; }
+.nav-sub-item{ display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:10px; font-size:12px; color:var(--text-3); transition:.2s; }
+.nav-sub-item:hover{ color:var(--gold); background:rgba(255,213,79,.06); }
+.nav-sub-item i{ font-size:6px; }
+.shell.collapsed .nav-group .chev, .shell.collapsed .nav-submenu{ display:none; }
+
+/* ============ Premium topbar ============ */
+.topbar-premium-title{ position:absolute; right:50%; transform:translateX(50%); display:flex; align-items:center; gap:9px; font-size:13.5px; font-weight:700; color:var(--gold); white-space:nowrap; }
+.topbar-premium-title i{ font-size:14px; }
+@media (max-width:860px){ .topbar-premium-title{ display:none; } }
+
+@media (max-width:1100px){
+    .stat-grid-6{ grid-template-columns:repeat(3,1fr); }
+}
+@media (max-width:640px){
+    .stat-grid-6{ grid-template-columns:repeat(2,1fr); }
+    .gauge-row{ gap:14px; justify-content:center; }
+}
+
+/* ============ Groups / Roles cards ============ */
+.groups-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; }
+.group-card{ padding:18px; display:flex; flex-direction:column; gap:12px; }
+.group-card-top{ display:flex; align-items:center; justify-content:space-between; }
+.group-icon{ width:38px; height:38px; border-radius:10px; background:rgba(255,213,79,.1); color:var(--gold); display:flex; align-items:center; justify-content:center; font-size:14px; }
+.group-name{ font-weight:700; font-size:13.5px; }
+.group-meta{ font-size:11px; color:var(--text-3); }
+.perm-wrap{ display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+.perm-chip{ font-size:10px; font-weight:600; color:var(--text-2); background:var(--card-2); border:1px solid var(--border); padding:4px 9px; border-radius:999px; }
+.badge.offline{ color:var(--danger); background:rgba(239,90,111,.1); }
+.badge.disabled{ color:var(--text-3); background:rgba(111,111,111,.12); }
+
+/* ============ Responsive ============ */
+@media (max-width:1100px){
+    .stat-grid{ grid-template-columns:repeat(2,1fr); }
+    .charts-row{ grid-template-columns:1fr; }
+    .settings-grid{ grid-template-columns:1fr; }
+}
+@media (max-width:860px){
+    .sidebar{ position:fixed; top:0; right:0; transform:translateX(100%); width:264px; box-shadow:-20px 0 50px rgba(0,0,0,.5); }
+    .shell.mobile-open .sidebar{ transform:translateX(0); }
+    .shell.collapsed .sidebar{ width:264px; }
+    .shell.collapsed .brand-name, .shell.collapsed .brand-sub, .shell.collapsed .nav-item .label, .shell.collapsed .collapse-btn span{ display:inline; }
+    .shell.collapsed .brand{ justify-content:flex-start; padding-inline:8px; }
+    .shell.collapsed .nav-item{ justify-content:flex-start; }
+    .collapse-btn{ display:none; }
+    .menu-btn{ display:flex; }
+    .rail-btn.desktop-only{ display:none; }
+    .search-box{ display:none; }
+    .content{ padding:16px; }
+}
+@media (max-width:640px){
+    .stat-grid{ grid-template-columns:1fr 1fr; gap:10px; }
+    .stat-card{ padding:14px; }
+    .stat-value{ font-size:19px; }
+    .user-meta{ display:none; }
+    .topbar{ padding:0 14px; gap:10px; }
+    .page-crumb{ display:none; }
+}
+</style>
+</head>
+<body>
+
+<div id="loader">
+    <div class="loader-mark"><span>H</span></div>
+    <div class="loader-bar"><span></span></div>
+</div>
+
+<div class="ambient" aria-hidden="true"></div>
+<div class="backdrop" id="backdrop"></div>
+
+<!-- ===================== Auth Gate ===================== -->
+<div id="authGate" style="position:fixed;inset:0;z-index:900;background:var(--bg);display:none;align-items:center;justify-content:center;">
+    <div class="card card-pad" style="width:320px;max-width:90vw;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+            <div class="brand-mark"><span><i class="fas fa-shield-halved"></i></span></div>
+            <div>
+                <div class="brand-name">HADI PANEL</div>
+                <div class="brand-sub" style="color:var(--gold);letter-spacing:1px;">ورود مدیر</div>
+            </div>
+        </div>
+        <div class="field" style="margin-bottom:10px;">
+            <label>رمز عبور مدیر</label>
+            <input type="password" id="authPassword" class="input-box" style="width:100%" placeholder="••••••••">
+        </div>
+        <button class="btn btn-gold" id="authLoginBtn" style="width:100%;justify-content:center;">ورود</button>
+        <div id="authError" style="color:var(--danger);font-size:12px;margin-top:10px;"></div>
+    </div>
+</div>
+
+<div class="shell" id="shell" style="display:none;">
+
+    <!-- ===================== Sidebar ===================== -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark"><span><i class="fas fa-shield-halved"></i></span></div>
+            <div>
+                <div class="brand-name">HADI PANEL</div>
+                <div class="brand-sub" style="color:var(--gold);letter-spacing:1px;">PREMIUM</div>
+            </div>
+        </div>
+
+        <nav class="nav" id="nav">
+            <div class="nav-indicator" id="navIndicator"></div>
+            <a class="nav-item active" data-view="dashboard" href="#">
+                <i class="fas fa-house"></i><span class="label">نمای کلی</span>
+            </a>
+            <a class="nav-item" data-view="inbounds" href="#">
+                <i class="fas fa-pen-to-square"></i><span class="label">ورودی‌ها</span>
+            </a>
+            <a class="nav-item" data-view="clients" href="#">
+                <i class="fas fa-users"></i><span class="label">کلاینت‌ها</span>
+            </a>
+            <a class="nav-item" data-view="groups" href="#">
+                <i class="fas fa-box-archive"></i><span class="label">گروه‌ها</span>
+            </a>
+            <a class="nav-item" data-view="nodes" href="#">
+                <i class="fas fa-server"></i><span class="label">نودها</span>
+            </a>
+            <a class="nav-item" data-view="admins" href="#">
+                <i class="fas fa-user-tie"></i><span class="label">مدیران</span>
+            </a>
+            <a class="nav-item" data-view="roles" href="#">
+                <i class="fas fa-user-shield"></i><span class="label">نقش‌های مدیر</span>
+            </a>
+            <a class="nav-item" data-view="exports" href="#">
+                <i class="fas fa-right-from-bracket"></i><span class="label">خروجی‌ها</span>
+            </a>
+            <a class="nav-item" data-view="routing" href="#">
+                <i class="fas fa-route"></i><span class="label">مسیریابی</span>
+            </a>
+
+            <div class="nav-divider"></div>
+
+            <div class="nav-group" id="settingsGroup">
+                <div class="nav-item" data-toggle-group>
+                    <span class="ng-left"><i class="fas fa-gear"></i><span class="label">تنظیمات پنل</span></span>
+                    <i class="fas fa-chevron-down chev label"></i>
+                </div>
+                <div class="nav-submenu">
+                    <a class="nav-sub-item" href="#" data-view="settings"><i class="fas fa-circle"></i>عمومی</a>
+                    <a class="nav-sub-item" href="#" data-view="settings"><i class="fas fa-circle"></i>امنیت</a>
+                    <a class="nav-sub-item" href="#" data-view="settings"><i class="fas fa-circle"></i>پشتیبان‌گیری</a>
+                </div>
+            </div>
+            <div class="nav-group" id="xrayGroup">
+                <div class="nav-item" data-toggle-group>
+                    <span class="ng-left"><i class="fas fa-wrench"></i><span class="label">پیکربندی Xray</span></span>
+                    <i class="fas fa-chevron-down chev label"></i>
+                </div>
+                <div class="nav-submenu">
+                    <a class="nav-sub-item" href="#" data-view="statistics"><i class="fas fa-circle"></i>تنظیمات هسته</a>
+                    <a class="nav-sub-item" href="#" data-view="statistics"><i class="fas fa-circle"></i>گواهی TLS</a>
+                    <a class="nav-sub-item" href="#" data-view="statistics"><i class="fas fa-circle"></i>ویرایش JSON</a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="nav-divider"></div>
+
+        <div class="sidebar-footer">
+            <a class="nav-item" href="#" id="logoutBtn">
+                <i class="fas fa-arrow-right-from-bracket"></i><span class="label">خروج از حساب</span>
+            </a>
+            <button class="collapse-btn" id="collapseBtn">
+                <i class="fas fa-angles-right"></i><span>جمع کردن</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- ===================== Main ===================== -->
+    <div class="main">
+        <header class="topbar" style="position:relative;">
+            <button class="menu-btn" id="menuBtn"><i class="fas fa-bars"></i></button>
+            <button class="rail-btn desktop-only" id="railCollapseBtn" title="جمع کردن منو"><i class="fas fa-bars"></i></button>
+            <div>
+                <div class="page-title" id="pageTitle">داشبورد</div>
+                <div class="page-crumb" id="pageCrumb">نمای کلی عملکرد پنل</div>
+            </div>
+
+            <div class="topbar-premium-title"><i class="fas fa-crown"></i>Hadi Panel Premium</div>
+
+            <div class="topbar-actions">
+                <div class="dropdown">
+                    <div class="user-chip" id="userChipBtn">
+                        <i class="fas fa-moon" style="color:var(--gold);font-size:12px;"></i>
+                        <div class="user-meta"><div class="user-name">حالت تاریک</div></div>
+                        <i class="fas fa-chevron-down" style="font-size:9px;color:var(--text-3)"></i>
+                    </div>
+                    <div class="dropdown-menu" id="userMenu">
+                        <div class="dd-item"><i class="fas fa-user"></i>پروفایل من</div>
+                        <div class="dd-item" data-goto="settings"><i class="fas fa-gear"></i>تنظیمات</div>
+                        <div class="dd-sep"></div>
+                        <div class="dd-item danger" id="logoutBtn2"><i class="fas fa-arrow-right-from-bracket"></i>خروج از حساب</div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="content">
+
+            <!-- ===================== Dashboard View ===================== -->
+            <section class="view active" id="view-dashboard">
+
+                <!-- Welcome + server gauges + Xray status -->
+                <div class="card welcome-card reveal">
+                    <div class="gauge-row" id="gaugeRow"></div>
+                    <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+                        <div>
+                            <div class="welcome-hello">خوش آمدید، مدیر 👋</div>
+                            <div class="welcome-sub">وضعیت سرور و سرویس‌ها</div>
+                        </div>
+                        <div class="xray-box">
+                            <div class="xray-box-top">
+                                <div class="xray-id">
+                                    <div class="xray-id-icon"><i class="fas fa-bolt"></i></div>
+                                    <div class="n">Xray</div>
+                                </div>
+                                <div class="xray-status-live"><i class="fas fa-circle"></i>در حال اجرا</div>
+                            </div>
+                            <div class="xray-box-actions">
+                                <span class="xa" id="xrayStopBtn"><i class="fas fa-pause"></i>توقف</span>
+                                <span class="xa" id="xrayRestartBtn"><i class="fas fa-arrows-rotate"></i>راه‌اندازی مجدد</span>
+                                <span class="xa mono" style="color:var(--text-3)"><i class="fas fa-code-branch"></i>v25.6.22</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Six-up quick stats -->
+                <div class="stat-grid-6">
+                    <div class="card stat-card-sm reveal">
+                        <div class="stat-icon"><i class="fas fa-users"></i></div>
+                        <div><div class="v" id="statClients">0</div><div class="l">کاربر فعال</div></div>
+                    </div>
+                    <div class="card stat-card-sm reveal" style="animation-delay:.03s">
+                        <div class="stat-icon"><i class="fas fa-diagram-project"></i></div>
+                        <div><div class="v" id="statNodes">0</div><div class="l">نود فعال</div></div>
+                    </div>
+                    <div class="card stat-card-sm reveal" style="animation-delay:.06s">
+                        <div class="stat-icon"><i class="fas fa-arrow-up-from-bracket"></i></div>
+                        <div><div class="v"><span id="statTraffic">0</span> MB</div><div class="l">مصرف کل امروز</div></div>
+                    </div>
+                    <div class="card stat-card-sm reveal" style="animation-delay:.09s">
+                        <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                        <div><div class="v" id="statUptime">-</div><div class="l">زمان کارکرد Xray</div></div>
+                    </div>
+                    <div class="card stat-card-sm reveal" style="animation-delay:.12s">
+                        <div class="stat-icon"><i class="fas fa-shield-halved"></i></div>
+                        <div><div class="v ok">فعال</div><div class="l">وضعیت پنل</div></div>
+                    </div>
+                    <div class="card stat-card-sm reveal" style="animation-delay:.15s">
+                        <div class="stat-icon"><i class="fas fa-layer-group"></i></div>
+                        <div><div class="v gold-link">1.4.0</div><div class="l">بروزرسانی در دسترس</div></div>
+                    </div>
+                </div>
+
+                <div class="charts-row" style="grid-template-columns:1.6fr 1fr 1fr;">
+                    <div class="card card-pad reveal" style="animation-delay:.2s">
+                        <div class="card-head">
+                            <div>
+                                <h3>نمودار ترافیک (۷ روز گذشته)</h3>
+                                <p>حجم آپلود و دانلود روزانه</p>
+                            </div>
+                            <div class="legend" style="margin-top:0">
+                                <span class="legend-item"><span class="legend-dot" style="background:var(--gold)"></span>دانلود</span>
+                                <span class="legend-item"><span class="legend-dot" style="background:var(--success)"></span>آپلود</span>
+                            </div>
+                        </div>
+                        <svg id="lineChart" viewBox="0 0 560 200" style="width:100%;height:200px;overflow:visible"></svg>
+                    </div>
+
+                    <div class="card card-pad reveal" style="animation-delay:.25s">
+                        <div class="card-head">
+                            <div>
+                                <h3>توزیع پروتکل‌ها</h3>
+                                <p>سهم هر پروتکل از کل کاربران</p>
+                            </div>
+                        </div>
+                        <svg id="donutChart" viewBox="0 0 200 200" style="width:100%;max-width:170px;display:block;margin:0 auto;"></svg>
+                        <div class="legend" id="donutLegend"></div>
+                    </div>
+
+                    <div class="card card-pad reveal" style="animation-delay:.3s">
+                        <div class="card-head"><div><h3>مصرف منابع</h3></div></div>
+                        <div class="resource-list" id="resourceList"></div>
+                    </div>
+                </div>
+
+                <div class="charts-row" style="grid-template-columns:1fr 1fr;">
+                    <div class="card card-pad reveal" style="animation-delay:.35s">
+                        <div class="card-head"><div><h3>اتصالات فعال</h3></div></div>
+                        <div class="conn-nums">
+                            <div class="conn-num"><div class="v" id="connTcp">0</div><div class="l"><i class="fas fa-diagram-project"></i>TCP</div></div>
+                            <div class="conn-num"><div class="v" id="connUdp">0</div><div class="l"><i class="fas fa-diagram-project"></i>UDP</div></div>
+                        </div>
+                        <div class="conn-map" id="connMap"></div>
+                    </div>
+
+                    <div class="card card-pad reveal" style="animation-delay:.4s">
+                        <div class="card-head"><div><h3>آخرین فعالیت‌ها</h3></div></div>
+                        <div class="activity-list" id="activityList"></div>
+                    </div>
+                </div>
+
+                <div class="card card-pad reveal" style="animation-delay:.45s">
+                    <div class="card-head">
+                        <div>
+                            <h3>کاربران اخیر</h3>
+                            <p>تازه‌ترین کاربران ثبت‌شده در پنل</p>
+                        </div>
+                        <a href="#" class="btn btn-ghost" data-goto="clients" style="padding:8px 14px;">مشاهده همه <i class="fas fa-arrow-left" style="font-size:10px"></i></a>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="data-table" id="recentTable">
+                            <thead><tr><th>کاربر</th><th>وضعیت</th><th>ترافیک</th><th>انقضا</th></tr></thead>
+                            <tbody id="recentTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===================== Clients View ===================== -->
+            <section class="view" id="view-clients">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">مدیریت کاربران</div>
+                        <div class="section-sub">مشاهده، جستجو و مدیریت کاربران پنل</div>
+                    </div>
+                    <div class="toolbar">
+                        <select class="select-box" id="statusFilter">
+                            <option value="all">همه وضعیت‌ها</option>
+                            <option value="active">فعال</option>
+                            <option value="expired">منقضی شده</option>
+                            <option value="paused">متوقف شده</option>
+                        </select>
+                        <input class="input-box" id="clientSearch" placeholder="جستجوی نام یا ایمیل..." style="width:190px">
+                        <button class="btn btn-gold" id="addClientBtn"><i class="fas fa-plus"></i>افزودن کاربر</button>
+                    </div>
+                </div>
+
+                <div class="card card-pad">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>کاربر</th><th>وضعیت</th><th>ترافیک</th><th>انقضا</th><th>عملیات</th></tr></thead>
+                            <tbody id="clientsTbody"></tbody>
+                        </table>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;flex-wrap:wrap;gap:10px;">
+                        <span style="font-size:11px;color:var(--text-3)">نمایش <span id="pageInfo">۱-۸</span> از <span id="pageTotal" class="mono">۱۲۸</span> کاربر</span>
+                        <div class="toolbar">
+                            <button class="btn btn-ghost" style="padding:8px 14px"><i class="fas fa-chevron-right"></i></button>
+                            <button class="btn btn-ghost" style="padding:8px 14px">بعدی <i class="fas fa-chevron-left"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===================== Statistics View ===================== -->
+            <section class="view" id="view-statistics">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">آمار و گزارشات</div>
+                        <div class="section-sub">تحلیل کامل عملکرد و مصرف پنل</div>
+                    </div>
+                </div>
+
+                <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px;">
+                    <div class="mini-stat"><div class="stat-icon"><i class="fas fa-arrow-up"></i></div><div><div class="v" id="stUp">-</div><div class="l">آپلود کل</div></div></div>
+                    <div class="mini-stat"><div class="stat-icon"><i class="fas fa-arrow-down"></i></div><div><div class="v" id="stDown">-</div><div class="l">دانلود کل</div></div></div>
+                    <div class="mini-stat"><div class="stat-icon"><i class="fas fa-network-wired"></i></div><div><div class="v" id="stInbounds">-</div><div class="l">تعداد اینباند</div></div></div>
+                    <div class="mini-stat"><div class="stat-icon"><i class="fas fa-microchip"></i></div><div><div class="v" id="stCpu">-</div><div class="l">مصرف CPU</div></div></div>
+                </div>
+
+                <div class="charts-row" style="grid-template-columns:1.4fr 1fr;">
+                    <div class="card card-pad reveal">
+                        <div class="card-head">
+                            <div><h3>ترافیک روزانه</h3><p>حجم مصرفی هر روز هفته (گیگابایت)</p></div>
+                        </div>
+                        <svg id="barChart" viewBox="0 0 560 210" style="width:100%;height:210px;overflow:visible"></svg>
+                    </div>
+                    <div class="card card-pad reveal">
+                        <div class="card-head"><div><h3>پرمصرف‌ترین کاربران</h3><p>بر اساس حجم مصرفی</p></div></div>
+                        <div id="topUsersList" style="display:flex;flex-direction:column;gap:14px;"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===================== Settings View ===================== -->
+            <section class="view" id="view-settings">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">تنظیمات</div>
+                        <div class="section-sub">پیکربندی عمومی، امنیت و ظاهر پنل</div>
+                    </div>
+                </div>
+
+                <div class="settings-grid">
+                    <div class="card card-pad reveal">
+                        <div class="card-head"><h3><i class="fas fa-sliders" style="color:var(--gold);margin-left:8px"></i>تنظیمات عمومی</h3></div>
+                        <div class="field"><label>نام پنل</label><input type="text" value="Hadi Panel"></div>
+                        <div class="field"><label>آدرس دامنه</label><input type="text" value="panel.hadi-vpn.example.com" class="mono" dir="ltr"></div>
+                        <div class="field"><label>منطقه زمانی</label>
+                            <select><option>Asia/Tehran</option><option>UTC</option><option>Europe/Berlin</option></select>
+                        </div>
+                        <div class="field" style="margin-bottom:0"><label>زبان پیش‌فرض</label>
+                            <select><option>فارسی</option><option>English</option></select>
+                        </div>
+                    </div>
+
+                    <div class="card card-pad reveal" style="animation-delay:.05s">
+                        <div class="card-head"><h3><i class="fas fa-shield-halved" style="color:var(--gold);margin-left:8px"></i>امنیت</h3></div>
+                        <div class="field"><label>رمز عبور جدید</label><input type="password" placeholder="••••••••"></div>
+                        <div class="field" style="margin-bottom:6px"><label>تکرار رمز عبور</label><input type="password" placeholder="••••••••"></div>
+                        <div class="switch-row">
+                            <div><div class="t">تایید دو مرحله‌ای</div><div class="d">افزایش امنیت با کد یکبار مصرف</div></div>
+                            <div class="switch" data-switch></div>
+                        </div>
+                        <div class="switch-row">
+                            <div><div class="t">اعلان ورود ناشناس</div><div class="d">ارسال هشدار برای ورود از دستگاه جدید</div></div>
+                            <div class="switch on" data-switch></div>
+                        </div>
+                    </div>
+
+                    <div class="card card-pad reveal" style="animation-delay:.1s">
+                        <div class="card-head"><h3><i class="fas fa-palette" style="color:var(--gold);margin-left:8px"></i>ظاهر</h3></div>
+                        <div class="switch-row">
+                            <div><div class="t">حالت فشرده</div><div class="d">نمایش فشرده‌تر جداول و کارت‌ها</div></div>
+                            <div class="switch" data-switch></div>
+                        </div>
+                        <div class="switch-row">
+                            <div><div class="t">انیمیشن‌های رابط کاربری</div><div class="d">فعال بودن جلوه‌های نرم و انتقال‌ها</div></div>
+                            <div class="switch on" data-switch></div>
+                        </div>
+                        <div class="switch-row" style="border-top:1px solid var(--border);padding-top:14px;margin-top:2px;">
+                            <div><div class="t">تم رنگی</div><div class="d">Black &amp; Gold — ثابت</div></div>
+                            <span class="badge active"><i class="fas fa-circle"></i>فعال</span>
+                        </div>
+                    </div>
+
+                    <div class="card card-pad reveal" style="animation-delay:.15s">
+                        <div class="card-head"><h3><i class="fas fa-bell" style="color:var(--gold);margin-left:8px"></i>اعلان‌ها</h3></div>
+                        <div class="switch-row">
+                            <div><div class="t">اتمام حجم کاربران</div><div class="d">اطلاع‌رسانی هنگام اتمام ترافیک</div></div>
+                            <div class="switch on" data-switch></div>
+                        </div>
+                        <div class="switch-row">
+                            <div><div class="t">نزدیک شدن به انقضا</div><div class="d">هشدار سه روز قبل از انقضای اشتراک</div></div>
+                            <div class="switch on" data-switch></div>
+                        </div>
+                        <div class="switch-row">
+                            <div><div class="t">گزارش هفتگی ایمیل</div><div class="d">ارسال خلاصه عملکرد هر هفته</div></div>
+                            <div class="switch" data-switch></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
+                    <button class="btn btn-ghost">انصراف</button>
+                    <button class="btn btn-gold" id="saveSettingsBtn"><i class="fas fa-check"></i>ذخیره تغییرات</button>
+                </div>
+            </section>
+
+            <!-- ===================== Inbounds View ===================== -->
+            <section class="view" id="view-inbounds">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">ورودی‌ها</div>
+                        <div class="section-sub">مدیریت پروتکل‌ها و پورت‌های ورودی Xray</div>
+                    </div>
+                    <div class="toolbar">
+                        <button class="btn btn-gold" id="addInboundBtn"><i class="fas fa-plus"></i>افزودن ورودی</button>
+                    </div>
+                </div>
+                <div class="card card-pad">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>تگ</th><th>پروتکل</th><th>پورت</th><th>کلاینت‌ها</th><th>ترافیک</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+                            <tbody id="inboundsTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===================== Groups View ===================== -->
+            <section class="view" id="view-groups">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">گروه‌ها</div>
+                        <div class="section-sub">دسته‌بندی کلاینت‌ها برای اعمال محدودیت‌های مشترک</div>
+                    </div>
+                    <div class="toolbar">
+                        <button class="btn btn-gold" id="addGroupBtn"><i class="fas fa-plus"></i>افزودن گروه</button>
+                    </div>
+                </div>
+                <div class="groups-grid" id="groupsGrid"></div>
+            </section>
+
+            <!-- ===================== Nodes View ===================== -->
+            <section class="view" id="view-nodes">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">نودها</div>
+                        <div class="section-sub">مدیریت سرورهای متصل و توزیع بار</div>
+                    </div>
+                    <div class="toolbar">
+                        <button class="btn btn-gold" id="addNodeBtn"><i class="fas fa-plus"></i>افزودن نود</button>
+                    </div>
+                </div>
+                <div class="card card-pad">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>نود</th><th>موقعیت</th><th>وضعیت</th><th>بار سیستم</th><th>کاربران متصل</th><th>عملیات</th></tr></thead>
+                            <tbody id="nodesTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===================== Admins View ===================== -->
+            <section class="view" id="view-admins">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">مدیران</div>
+                        <div class="section-sub">مدیریت حساب‌های ادمین پنل</div>
+                    </div>
+                    <div class="toolbar">
+                        <button class="btn btn-gold" id="addAdminBtn"><i class="fas fa-plus"></i>افزودن مدیر</button>
+                    </div>
+                </div>
+                <div class="card card-pad">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>مدیر</th><th>نقش</th><th>آخرین ورود</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+                            <tbody id="adminsTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===================== Roles View ===================== -->
+            <section class="view" id="view-roles">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">نقش‌های مدیر</div>
+                        <div class="section-sub">سطوح دسترسی و مجوزهای هر نقش</div>
+                    </div>
+                    <div class="toolbar">
+                        <button class="btn btn-gold" id="addRoleBtn"><i class="fas fa-plus"></i>افزودن نقش</button>
+                    </div>
+                </div>
+                <div class="groups-grid" id="rolesGrid"></div>
+            </section>
+
+            <!-- ===================== Exports View ===================== -->
+            <section class="view" id="view-exports">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">خروجی‌ها</div>
+                        <div class="section-sub">مدیریت آدرس‌های خروجی و اشتراک‌گذاری کانفیگ</div>
+                    </div>
+                    <div class="toolbar">
+                        <button class="btn btn-gold" id="addExportBtn"><i class="fas fa-plus"></i>افزودن خروجی</button>
+                    </div>
+                </div>
+                <div class="card card-pad">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>تگ</th><th>پروتکل</th><th>مقصد</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+                            <tbody id="exportsTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===================== Routing View ===================== -->
+            <section class="view" id="view-routing">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">مسیریابی</div>
+                        <div class="section-sub">قوانین مسیریابی ترافیک بین ورودی‌ها و خروجی‌ها</div>
+                    </div>
+                    <div class="toolbar">
+                        <button class="btn btn-gold" id="addRuleBtn"><i class="fas fa-plus"></i>افزودن قانون</button>
+                    </div>
+                </div>
+                <div class="card card-pad">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>اولویت</th><th>منبع</th><th>مقصد</th><th>اکشن</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+                            <tbody id="routingTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+</div>
+
+<!-- Add Client Modal -->
+<div class="modal-overlay" id="clientModal">
+    <div class="modal">
+        <div class="modal-head">
+            <h3>افزودن کاربر جدید</h3>
+            <button class="modal-close" id="modalClose"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="field"><label>نام / ریمارک</label><input type="text" id="mName" placeholder="مثلاً: علی رضایی"></div>
+        <div class="field"><label>محدودیت ترافیک (GB) — صفر یعنی نامحدود</label><input type="number" id="mLimit" placeholder="۵۰"></div>
+        <div class="field" style="margin-bottom:0"><label>تاریخ انقضا</label><input type="date" id="mExpiry"></div>
+        <div class="modal-foot">
+            <button class="btn btn-ghost" id="modalCancel">انصراف</button>
+            <button class="btn btn-gold" id="modalCreate"><i class="fas fa-plus"></i>ایجاد کاربر</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"><i class="fas fa-circle-check"></i><span id="toastText">انجام شد</span></div>
+
+<script>
+/* ============================================================
+   Hadi Panel — UI only. No backend / API / auth logic here.
+   All data below is local mock data for layout & interaction
+   demonstration purposes only.
+============================================================ */
+
+/* ---------- helpers ---------- */
+const persianDigits = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
+function toFa(n){ return String(n).replace(/[0-9]/g, d => persianDigits[d]); }
+function fmtBytes(gb){ return gb.toFixed(gb < 10 ? 1 : 0); }
+function qs(sel, root=document){ return root.querySelector(sel); }
+function qsa(sel, root=document){ return [...root.querySelectorAll(sel)]; }
+function showToast(text){
+    const t = qs('#toast');
+    qs('#toastText').textContent = text;
+    t.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+/* ---------- loader ---------- */
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        qs('#loader').classList.add('hide');
+    }, 700);
+});
+
+/* ---------- sidebar nav + view routing ---------- */
+const shell = qs('#shell');
+const navItems = qsa('.nav > .nav-item[data-view]');
+const navIndicator = qs('#navIndicator');
+const views = qsa('.view');
+const implementedViews = new Set(views.map(v => v.id.replace('view-','')));
+const pageMeta = {
+    dashboard: { title:'نمای کلی', crumb:'وضعیت سرور و سرویس‌ها' },
+    inbounds:  { title:'ورودی‌ها', crumb:'مدیریت پروتکل‌های ورودی' },
+    clients:   { title:'کلاینت‌ها', crumb:'مدیریت کاربران پنل' },
+    groups:    { title:'گروه‌ها', crumb:'دسته‌بندی کلاینت‌ها' },
+    nodes:     { title:'نودها', crumb:'مدیریت نودهای متصل' },
+    admins:    { title:'مدیران', crumb:'مدیریت حساب‌های ادمین' },
+    roles:     { title:'نقش‌های مدیر', crumb:'سطوح دسترسی مدیران' },
+    exports:   { title:'خروجی‌ها', crumb:'خروجی و اشتراک‌گذاری کانفیگ' },
+    routing:   { title:'مسیریابی', crumb:'قوانین مسیریابی ترافیک' },
+    statistics:{ title:'آمار و گزارشات', crumb:'تحلیل عملکرد و مصرف' },
+    settings:  { title:'تنظیمات', crumb:'پیکربندی عمومی و امنیت' },
+};
+
+function moveIndicator(el){
+    if(!el) return;
+    navIndicator.style.transform = `translateY(${el.offsetTop - el.parentElement.offsetTop}px)`;
+    navIndicator.style.height = el.offsetHeight + 'px';
+}
+
+function setView(name){
+    const meta = pageMeta[name];
+    if(!implementedViews.has(name)){
+        showToast(meta ? `${meta.title} — به زودی` : 'به زودی در دسترس خواهد بود');
+        navItems.forEach(n => n.classList.toggle('active', n.dataset.view === name));
+        const active = navItems.find(n => n.dataset.view === name);
+        if(active) moveIndicator(active);
+        if(meta){ qs('#pageTitle').textContent = meta.title; qs('#pageCrumb').textContent = meta.crumb; }
+        closeMobileNav();
+        return;
+    }
+    navItems.forEach(n => n.classList.toggle('active', n.dataset.view === name));
+    views.forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+    if(meta){ qs('#pageTitle').textContent = meta.title; qs('#pageCrumb').textContent = meta.crumb; }
+    const active = navItems.find(n => n.dataset.view === name);
+    moveIndicator(active);
+    closeMobileNav();
+    window.scrollTo({top:0, behavior:'smooth'});
+}
+
+navItems.forEach(item => {
+    item.addEventListener('click', (e) => { e.preventDefault(); setView(item.dataset.view); });
+});
+qsa('.nav-sub-item[data-view]').forEach(item => {
+    item.addEventListener('click', (e) => { e.preventDefault(); setView(item.dataset.view); });
+});
+qsa('[data-goto]').forEach(el => {
+    el.addEventListener('click', (e) => { e.preventDefault(); setView(el.dataset.goto); });
+});
+
+/* ---------- collapsible sidebar groups (settings / xray config) ---------- */
+qsa('.nav-group [data-toggle-group]').forEach(head => {
+    head.addEventListener('click', () => {
+        const group = head.closest('.nav-group');
+        const wasOpen = group.classList.contains('open');
+        qsa('.nav-group').forEach(g => g.classList.remove('open'));
+        if(!wasOpen) group.classList.add('open');
+    });
+});
+
+window.addEventListener('resize', () => {
+    const active = navItems.find(n => n.classList.contains('active'));
+    moveIndicator(active);
+});
+window.addEventListener('load', () => moveIndicator(navItems.find(n => n.classList.contains('active'))));
+
+/* ---------- collapse (desktop) / mobile drawer ---------- */
+const backdrop = qs('#backdrop');
+function openMobileNav(){ shell.classList.add('mobile-open'); backdrop.classList.add('show'); }
+function closeMobileNav(){ shell.classList.remove('mobile-open'); backdrop.classList.remove('show'); }
+qs('#menuBtn').addEventListener('click', openMobileNav);
+backdrop.addEventListener('click', closeMobileNav);
+
+function toggleCollapse(){
+    shell.classList.toggle('collapsed');
+    setTimeout(() => moveIndicator(navItems.find(n => n.classList.contains('active'))), 380);
+}
+qs('#collapseBtn').addEventListener('click', toggleCollapse);
+qs('#railCollapseBtn').addEventListener('click', toggleCollapse);
+
+/* ---------- user dropdown ---------- */
+const userMenu = qs('#userMenu');
+qs('#userChipBtn').addEventListener('click', (e) => { e.stopPropagation(); userMenu.classList.toggle('open'); });
+document.addEventListener('click', () => userMenu.classList.remove('open'));
+userMenu.addEventListener('click', e => e.stopPropagation());
+qs('#logoutBtn').addEventListener('click', e => { e.preventDefault(); showToast('خروج از حساب (نمایشی)'); });
+qs('#logoutBtn2').addEventListener('click', () => showToast('خروج از حساب (نمایشی)'));
+
+/* ---------- switches ---------- */
+qsa('[data-switch]').forEach(sw => {
+    sw.addEventListener('click', () => sw.classList.toggle('on'));
+});
+qs('#saveSettingsBtn').addEventListener('click', () => showToast('تغییرات ذخیره شد'));
+
+/* ---------- count-up ---------- */
+function countUp(el, target, opts={}){
+    const dur = opts.duration || 900;
+    const decimals = opts.decimals || 0;
+    const suffix = opts.suffix || '';
+    const start = performance.now();
+    function step(now){
+        const p = Math.min(1, (now - start) / dur);
+        const eased = 1 - Math.pow(1 - p, 3);
+        const val = target * eased;
+        el.textContent = toFa(val.toFixed(decimals)) + suffix;
+        if(p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+}
+
+/* ---------- real data (from Worker API) ---------- */
+const protocols = [
+    {name:'VLESS', color:'#FFD54F'},
+    {name:'VMESS', color:'#3ddc97'},
+    {name:'TROJAN', color:'#4f9df7'},
+    {name:'OTHER', color:'#8f8f8f'},
+];
+let clients = []; // پر می‌شود از /api/users
+let editingUuid = null; // اگر مودال در حالت ویرایش باشد
+
+function computeStatus(u){
+    if(!u.enabled) return 'paused';
+    if(u.expireAt && new Date(u.expireAt).getTime() < Date.now()) return 'expired';
+    if(u.trafficLimitGB > 0 && u.trafficUsedBytes >= u.trafficLimitGB*1024*1024*1024) return 'expired';
+    return 'active';
+}
+function usedPercent(u){
+    if(!u.trafficLimitGB || u.trafficLimitGB <= 0) return 0;
+    const pct = (u.trafficUsedBytes / (u.trafficLimitGB*1024*1024*1024)) * 100;
+    return Math.min(100, Math.round(pct));
+}
+function usedGbText(u){
+    const gb = (u.trafficUsedBytes||0) / (1024*1024*1024);
+    return gb < 10 ? gb.toFixed(1) : Math.round(gb);
+}
+function daysUntil(expireAt){
+    if(!expireAt) return null;
+    return Math.ceil((new Date(expireAt).getTime() - Date.now()) / 86400000);
+}
+function initialsOf(name){
+    const parts = (name||'کاربر').trim().split(' ');
+    return (parts[0]?.[0]||'ک') + (parts[1]?.[0]||'');
+}
+function vlessLink(u){
+    const host = location.hostname;
+    return `vless://${u.uuid}@${host}:443?encryption=none&security=tls&sni=${host}&type=ws&host=${host}&path=%2Fvless-ws#${encodeURIComponent(u.name)}`;
+}
+
+/* ---------- fetch از Worker ---------- */
+async function fetchClients(){
+    const res = await fetch('/api/users');
+    if(res.status === 401){ showLogin(); return; }
+    const data = await res.json();
+    clients = (data.users || []).map(u => ({
+        ...u,
+        status: computeStatus(u),
+        used: usedPercent(u),
+        initials: initialsOf(u.name),
+    }));
+}
+
+const statusLabel = { active:'فعال', expired:'منقضی شده', paused:'متوقف شده' };
+function statusBadge(status){
+    return `<span class="badge ${status}"><i class="fas fa-circle"></i>${statusLabel[status]}</span>`;
+}
+function expiryText(u){
+    const days = daysUntil(u.expireAt);
+    if(days === null) return `<span class="mono">نامحدود</span>`;
+    if(days < 0) return `<span class="mono" style="color:var(--danger)">${toFa(Math.abs(days))} روز پیش</span>`;
+    return `<span class="mono">${toFa(days)} روز دیگر</span>`;
+}
+function clientRow(c, withActions=true){
+    return `<tr>
+        <td><div class="client-cell">
+            <div class="client-avatar">${c.initials}</div>
+            <div><div class="client-name">${c.name}</div><div class="client-email">${c.trafficLimitGB > 0 ? c.trafficLimitGB+' GB سقف' : 'نامحدود'}</div></div>
+        </div></td>
+        <td>${statusBadge(c.status)}</td>
+        <td><div style="display:flex;align-items:center;gap:8px;">
+            <div class="mini-bar"><span style="width:${c.used}%"></span></div>
+            <span class="mono" style="font-size:11px;color:var(--text-3)">${usedGbText(c)} GB</span>
+        </div></td>
+        <td>${expiryText(c)}</td>
+        ${withActions ? `<td><div class="row-actions">
+            <button class="act-btn" title="ویرایش" data-uuid="${c.uuid}"><i class="fas fa-pen"></i></button>
+            <button class="act-btn" title="کپی لینک" data-uuid="${c.uuid}"><i class="fas fa-link"></i></button>
+            <button class="act-btn" title="${c.enabled ? 'توقف' : 'فعال‌سازی'}" data-uuid="${c.uuid}"><i class="fas fa-power-off"></i></button>
+            <button class="act-btn danger" title="حذف" data-uuid="${c.uuid}"><i class="fas fa-trash"></i></button>
+        </div></td>` : ''}
+    </tr>`;
+}
+
+/* ---------- render: recent clients (dashboard) ---------- */
+function renderRecent(){
+    const tbody = qs('#recentTbody');
+    tbody.innerHTML = clients.slice(0,5).map(c => clientRow(c, false)).join('') ||
+        `<tr><td colspan="4" style="text-align:center;color:var(--text-3);padding:20px 0;">کاربری ثبت نشده</td></tr>`;
+}
+
+/* ---------- render: clients table (with filter/search) ---------- */
+async function renderClients(){
+    const tbody = qs('#clientsTbody');
+    tbody.innerHTML = Array.from({length:4}).map(() =>
+        `<tr><td colspan="5"><div class="skel" style="height:36px;border-radius:9px;"></div></td></tr>`
+    ).join('');
+    await fetchClients();
+    applyClientFilters();
+}
+function applyClientFilters(){
+    const statusVal = qs('#statusFilter').value;
+    const term = qs('#clientSearch').value.trim().toLowerCase();
+    let filtered = clients.filter(c => {
+        const matchStatus = statusVal === 'all' || c.status === statusVal;
+        const matchTerm = !term || c.name.toLowerCase().includes(term);
+        return matchStatus && matchTerm;
+    });
+    const tbody = qs('#clientsTbody');
+    if(filtered.length === 0){
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:26px 0;">
+            <i class="fas fa-circle-exclamation" style="color:var(--gold);margin-left:6px"></i>کاربری با این مشخصات پیدا نشد.
+        </td></tr>`;
+    } else {
+        tbody.innerHTML = filtered.map(c => clientRow(c)).join('');
+    }
+    qs('#pageInfo').textContent = `۱-${toFa(filtered.length)}`;
+    qs('#pageTotal').textContent = toFa(clients.length);
+
+    tbody.querySelectorAll('.act-btn.danger').forEach(btn => {
+        btn.addEventListener('click', () => removeClient(btn.dataset.uuid));
+    });
+    tbody.querySelectorAll('.act-btn[title="ویرایش"]').forEach(btn => {
+        btn.addEventListener('click', () => openModal(btn.dataset.uuid));
+    });
+    tbody.querySelectorAll('.act-btn[title="کپی لینک"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const c = clients.find(x => x.uuid === btn.dataset.uuid);
+            navigator.clipboard.writeText(vlessLink(c));
+            showToast('لینک اتصال کپی شد');
+        });
+    });
+    tbody.querySelectorAll('.act-btn[title="توقف"], .act-btn[title="فعال‌سازی"]').forEach(btn => {
+        btn.addEventListener('click', () => toggleClient(btn.dataset.uuid));
+    });
+
+    // به‌روزرسانی کارت‌های آماری بخش داشبورد
+    const activeCount = clients.filter(c => c.status === 'active').length;
+    const totalUsedGB = clients.reduce((s,c) => s + (c.trafficUsedBytes||0), 0) / (1024*1024*1024);
+    if(qs('#statClients')) qs('#statClients').textContent = toFa(activeCount);
+    if(qs('#statTraffic')) qs('#statTraffic').textContent = totalUsedGB.toFixed(2);
+}
+qs('#statusFilter').addEventListener('change', applyClientFilters);
+qs('#clientSearch').addEventListener('input', applyClientFilters);
+
+/* ---------- عملیات API روی کاربران ---------- */
+async function removeClient(uuid){
+    if(!confirm('این کاربر حذف شود؟')) return;
+    await fetch('/api/users/' + uuid, { method:'DELETE' });
+    showToast('کاربر حذف شد');
+    await renderClients();
+}
+async function toggleClient(uuid){
+    const c = clients.find(x => x.uuid === uuid);
+    await fetch('/api/users/' + uuid, {
+        method:'PUT', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ enabled: !c.enabled })
+    });
+    showToast(c.enabled ? 'کاربر متوقف شد' : 'کاربر فعال شد');
+    await renderClients();
+}
+
+/* ---------- modal (افزودن/ویرایش) ---------- */
+const clientModal = qs('#clientModal');
+function openModal(uuid){
+    editingUuid = uuid || null;
+    if(editingUuid){
+        const c = clients.find(x => x.uuid === editingUuid);
+        qs('.modal-head h3').textContent = 'ویرایش کاربر';
+        qs('#mName').value = c.name || '';
+        qs('#mLimit').value = c.trafficLimitGB || '';
+        qs('#mExpiry').value = c.expireAt ? c.expireAt.split('T')[0] : '';
+    } else {
+        qs('.modal-head h3').textContent = 'افزودن کاربر جدید';
+        ['mName','mLimit','mExpiry'].forEach(id => qs('#'+id).value = '');
+    }
+    clientModal.classList.add('open');
+}
+function closeModal(){ clientModal.classList.remove('open'); editingUuid = null; }
+qs('#addClientBtn').addEventListener('click', () => openModal(null));
+qs('#modalClose').addEventListener('click', closeModal);
+qs('#modalCancel').addEventListener('click', closeModal);
+clientModal.addEventListener('click', e => { if(e.target === clientModal) closeModal(); });
+qs('#modalCreate').addEventListener('click', async () => {
+    const name = qs('#mName').value.trim() || 'کاربر جدید';
+    const trafficLimitGB = Number(qs('#mLimit').value) || 0;
+    const expireDate = qs('#mExpiry').value;
+    const expireAt = expireDate ? new Date(expireDate).toISOString() : null;
+
+    if(editingUuid){
+        await fetch('/api/users/' + editingUuid, {
+            method:'PUT', headers:{'content-type':'application/json'},
+            body: JSON.stringify({ name, trafficLimitGB, expireAt })
+        });
+        showToast(`کاربر «${name}» ویرایش شد`);
+    } else {
+        await fetch('/api/users', {
+            method:'POST', headers:{'content-type':'application/json'},
+            body: JSON.stringify({ name, trafficLimitGB, expireAt })
+        });
+        showToast(`کاربر «${name}» ایجاد شد`);
+    }
+    closeModal();
+    await renderClients();
+});
+
+/* ---------- charts: line (traffic overview) ---------- */
+function drawLineChart(data){
+    const svg = qs('#lineChart');
+    const W = 560, H = 200, pad = 24;
+    const max = Math.max(...data) * 1.15;
+    const stepX = (W - pad*2) / (data.length - 1);
+    const pts = data.map((v,i) => [pad + i*stepX, H - pad - (v/max)*(H-pad*2)]);
+    const linePath = pts.map((p,i) => (i===0?'M':'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const areaPath = linePath + ` L${pts[pts.length-1][0]},${H-pad} L${pts[0][0]},${H-pad} Z`;
+
+    const gridLines = [0,1,2,3].map(i => {
+        const y = pad + i*((H-pad*2)/3);
+        return `<line x1="${pad}" y1="${y}" x2="${W-pad}" y2="${y}" stroke="#2D2D2D" stroke-width="1"/>`;
+    }).join('');
+
+    const dots = pts.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="#090909" stroke="#FFD54F" stroke-width="2"/>`).join('');
+
+    svg.innerHTML = `
+        <defs>
+            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#FFD54F" stop-opacity="0.28"/>
+                <stop offset="100%" stop-color="#FFD54F" stop-opacity="0"/>
+            </linearGradient>
+        </defs>
+        ${gridLines}
+        <path d="${areaPath}" fill="url(#areaGrad)" opacity="0"><animate attributeName="opacity" from="0" to="1" dur=".6s" begin=".3s" fill="freeze"/></path>
+        <path d="${linePath}" fill="none" stroke="#FFD54F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+            stroke-dasharray="1000" stroke-dashoffset="1000">
+            <animate attributeName="stroke-dashoffset" from="1000" to="0" dur="1.1s" fill="freeze" calcMode="spline" keySplines="0.22 0.9 0.32 1"/>
+        </path>
+        <g opacity="0"><animate attributeName="opacity" from="0" to="1" dur=".4s" begin="1s" fill="freeze"/>${dots}</g>
+    `;
+}
+const weekData  = [14,22,18,30,26,38,32];
+const monthData = [22,28,20,34,30,44,26,32,38,29,41,36,30,44];
+qs('#trafficRange').addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if(!btn) return;
+    qsa('#trafficRange button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    drawLineChart(btn.dataset.r === 'week' ? weekData : monthData);
+});
+
+/* ---------- charts: donut (protocol distribution) ---------- */
+function drawDonut(){
+    const svg = qs('#donutChart');
+    const legend = qs('#donutLegend');
+    const values = [68,18,10,4]; // percentages, sum=100
+    const total = values.reduce((a,b)=>a+b,0);
+    const cx=100, cy=100, r=72, sw=22;
+    const circumference = 2*Math.PI*r;
+    let offsetAcc = 0;
+    let circles = '';
+    values.forEach((v,i) => {
+        const frac = v/total;
+        const len = frac*circumference;
+        const gap = circumference - len;
+        const rotation = (offsetAcc/total)*360 - 90;
+        circles += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${protocols[i].color}" stroke-width="${sw}"
+            stroke-dasharray="${len} ${gap}" stroke-dashoffset="0" transform="rotate(${rotation} ${cx} ${cy})"
+            stroke-linecap="butt" opacity="0">
+            <animate attributeName="opacity" from="0" to="1" dur=".5s" begin="${.2+i*.12}s" fill="freeze"/>
+        </circle>`;
+        offsetAcc += v;
+    });
+    svg.innerHTML = `${circles}
+        <circle cx="${cx}" cy="${cy}" r="${r-sw/2-6}" fill="#181818" stroke="#2D2D2D" stroke-width="1"/>
+        <text x="${cx}" y="${cy-6}" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="800" font-family="JetBrains Mono, monospace">${toFa(128)}</text>
+        <text x="${cx}" y="${cy+16}" text-anchor="middle" fill="#6f6f6f" font-size="11">کل کاربران</text>`;
+    legend.innerHTML = values.map((v,i) =>
+        `<span class="legend-item"><span class="legend-dot" style="background:${protocols[i].color}"></span>${protocols[i].name} · ${toFa(v)}٪</span>`
+    ).join('');
+}
+
+/* ---------- charts: bar (daily traffic, statistics) ---------- */
+function drawBarChart(){
+    const svg = qs('#barChart');
+    const days = ['شنبه','یک','دو','سه','چهار','پنج','جمعه'];
+    const data = [24,38,31,46,29,52,40];
+    const W=560,H=210,pad=28,gap=18;
+    const max = Math.max(...data)*1.2;
+    const barW = (W - pad*2 - gap*(data.length-1)) / data.length;
+    let bars='', labels='';
+    data.forEach((v,i) => {
+        const h = (v/max)*(H-pad*2);
+        const x = pad + i*(barW+gap);
+        const y = H-pad-h;
+        bars += `<rect x="${x}" y="${H-pad}" width="${barW}" height="0" rx="6" fill="url(#barGrad)">
+            <animate attributeName="height" from="0" to="${h}" dur=".7s" begin="${i*.06}s" fill="freeze" calcMode="spline" keySplines="0.22 0.9 0.32 1"/>
+            <animate attributeName="y" from="${H-pad}" to="${y}" dur=".7s" begin="${i*.06}s" fill="freeze" calcMode="spline" keySplines="0.22 0.9 0.32 1"/>
+        </rect>`;
+        labels += `<text x="${x+barW/2}" y="${H-6}" text-anchor="middle" fill="#6f6f6f" font-size="10.5">${days[i]}</text>`;
+    });
+    svg.innerHTML = `<defs><linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#FFD54F"/><stop offset="100%" stop-color="#C7A225"/>
+    </linearGradient></defs>${bars}${labels}`;
+}
+
+/* ---------- top users (statistics) ---------- */
+function renderTopUsers(){
+    const top = [...clients].sort((a,b) => b.used - a.used).slice(0,5);
+    qs('#topUsersList').innerHTML = top.map(c => `
+        <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                <div style="display:flex;align-items:center;gap:9px;">
+                    <div class="client-avatar" style="width:26px;height:26px;font-size:10px;">${c.initials}</div>
+                    <span style="font-size:12px;font-weight:600;">${c.name}</span>
+                </div>
+                <span class="mono" style="font-size:11px;color:var(--text-2)">${c.used}٪</span>
+            </div>
+            <div class="mini-bar" style="width:100%;"><span style="width:${c.used}%"></span></div>
+        </div>
+    `).join('');
+}
+
+/* ---------- resource gauges (welcome card) ---------- */
+const resourceStats = [
+    {label:'پردازنده', sub:'48 : Cores', value:21.81, icon:'fa-microchip'},
+    {label:'حافظه', sub:'196.35 GB / 322.69 GB', value:60.84, icon:'fa-memory'},
+    {label:'سواب', sub:'223.56 GB / 1017.14 GB', value:0.44, icon:'fa-swatchbook'},
+    {label:'ذخیره‌سازی', sub:'1.21 TB / 2.86 TB', value:42.41, icon:'fa-hard-drive'},
+];
+function drawGauge(pct, size=88){
+    const r = (size/2) - 8, cx = size/2, cy = size/2;
+    const circ = 2*Math.PI*r;
+    const len = (pct/100)*circ;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#2D2D2D" stroke-width="7"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#FFD54F" stroke-width="7" stroke-linecap="round"
+            stroke-dasharray="${len} ${circ}" transform="rotate(-90 ${cx} ${cy})" opacity="0">
+            <animate attributeName="opacity" from="0" to="1" dur=".5s" begin=".1s" fill="freeze"/>
+        </circle>
+        <text x="${cx}" y="${cy+5}" text-anchor="middle" class="gauge-val">${toFa(pct.toFixed(2))}٪</text>
+    </svg>`;
+}
+function renderGauges(){
+    qs('#gaugeRow').innerHTML = resourceStats.map(r => `
+        <div class="gauge">
+            ${drawGauge(r.value)}
+            <div class="gauge-label">${r.sub}</div>
+            <div class="gauge-sub">${r.label}</div>
+        </div>
+    `).join('');
+}
+
+/* ---------- resource bars (charts row) ---------- */
+function renderResourceBars(){
+    qs('#resourceList').innerHTML = resourceStats.map(r => `
+        <div class="resource-row">
+            <div class="rr-top"><span>${r.label === 'سواب' ? 'SWAP' : r.label === 'حافظه' ? 'RAM' : r.label === 'ذخیره‌سازی' ? 'DISK' : 'CPU'}</span><span>${toFa(r.value.toFixed(2))}٪</span></div>
+            <div class="res-bar"><span style="width:${r.value}%"></span></div>
+        </div>
+    `).join('');
+}
+
+/* ---------- active connections map ---------- */
+function drawConnMap(){
+    const dots = [[60,40],[140,30],[230,60],[300,35],[380,55],[440,30],[100,90],[260,95],[350,90],[420,85]];
+    const lines = [[0,1],[1,3],[3,5],[2,4],[6,1],[7,4],[8,5],[0,6]];
+    const circles = dots.map(([x,y]) => `<circle cx="${x}" cy="${y}" r="3" fill="#FFD54F" opacity="0.9"/>`).join('');
+    const paths = lines.map(([a,b]) => {
+        const [x1,y1] = dots[a], [x2,y2] = dots[b];
+        const mx = (x1+x2)/2, my = Math.min(y1,y2)-14;
+        return `<path d="M${x1},${y1} Q${mx},${my} ${x2},${y2}" stroke="#FFD54F" stroke-width="1" fill="none" opacity="0.35"/>`;
+    }).join('');
+    qs('#connMap').innerHTML = `<svg viewBox="0 0 480 130" preserveAspectRatio="none">${paths}${circles}</svg>`;
+}
+
+/* ---------- recent activity feed ---------- */
+const activities = [
+    {icon:'fa-user-plus', text:'کاربر جدید متصل شد', time:'۱۴۰۴ اردیبهشت ۲۰ - ۲۰:۴۲', dot:'var(--success)'},
+    {icon:'fa-link', text:'کانفیگ جدید ایجاد شد', time:'۱۴۰۴ اردیبهشت ۲۰ - ۲۰:۳۵', dot:'var(--gold)'},
+    {icon:'fa-sliders', text:'تغییرات در تنظیمات اعمال شد', time:'۱۴۰۴ اردیبهشت ۲۰ - ۲۰:۳۰', dot:'#4f9df7'},
+];
+function renderActivities(){
+    qs('#activityList').innerHTML = activities.map(a => `
+        <div class="activity-item">
+            <div class="activity-icon"><i class="fas ${a.icon}"></i></div>
+            <div class="activity-text">${a.text}</div>
+            <div class="activity-time"><i class="fas fa-circle" style="color:${a.dot}"></i>${a.time}</div>
+        </div>
+    `).join('');
+}
+
+/* ---------- xray control buttons (demo) ---------- */
+qs('#xrayStopBtn').addEventListener('click', () => showToast('توقف Xray (نمایشی)'));
+qs('#xrayRestartBtn').addEventListener('click', () => showToast('راه‌اندازی مجدد Xray (نمایشی)'));
+
+/* ---------- inbounds ---------- */
+const inbounds = [
+    {tag:'inbound-vless-tls', protocol:'VLESS', port:443, clients:52, traffic:'182 GB', status:'active'},
+    {tag:'inbound-vmess-ws', protocol:'VMESS', port:8443, clients:31, traffic:'96 GB', status:'active'},
+    {tag:'inbound-trojan', protocol:'Trojan', port:2083, clients:18, traffic:'44 GB', status:'active'},
+    {tag:'inbound-ss', protocol:'Shadowsocks', port:8388, clients:4, traffic:'6 GB', status:'disabled'},
+];
+function renderInbounds(){
+    qs('#inboundsTbody').innerHTML = inbounds.map(i => `<tr>
+        <td><span class="mono" style="font-size:11.5px">${i.tag}</span></td>
+        <td>${i.protocol}</td>
+        <td class="mono">${toFa(i.port)}</td>
+        <td>${toFa(i.clients)}</td>
+        <td class="mono">${i.traffic}</td>
+        <td>${i.status === 'active' ? '<span class="badge active"><i class="fas fa-circle"></i>فعال</span>' : '<span class="badge disabled"><i class="fas fa-circle"></i>غیرفعال</span>'}</td>
+        <td><div class="row-actions">
+            <button class="act-btn" title="ویرایش"><i class="fas fa-pen"></i></button>
+            <button class="act-btn" title="کپی لینک"><i class="fas fa-link"></i></button>
+            <button class="act-btn danger" title="حذف"><i class="fas fa-trash"></i></button>
+        </div></td>
+    </tr>`).join('');
+    qs('#inboundsTbody').querySelectorAll('.act-btn').forEach(b => b.addEventListener('click', () => showToast('عملیات ورودی (نمایشی)')));
+}
+qs('#addInboundBtn').addEventListener('click', () => showToast('افزودن ورودی (نمایشی)'));
+
+/* ---------- groups ---------- */
+const groups = [
+    {name:'کاربران عادی', count:96, limit:'50 GB', icon:'fa-users'},
+    {name:'کاربران ویژه', count:22, limit:'200 GB', icon:'fa-star'},
+    {name:'تست و دمو', count:6, limit:'5 GB', icon:'fa-flask'},
+    {name:'همکاران', count:4, limit:'نامحدود', icon:'fa-handshake'},
+];
+function renderGroups(){
+    qs('#groupsGrid').innerHTML = groups.map(g => `
+        <div class="card group-card reveal">
+            <div class="group-card-top">
+                <div class="group-icon"><i class="fas ${g.icon}"></i></div>
+                <div class="row-actions">
+                    <button class="act-btn" title="ویرایش"><i class="fas fa-pen"></i></button>
+                    <button class="act-btn danger" title="حذف"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+            <div><div class="group-name">${g.name}</div><div class="group-meta">${toFa(g.count)} کاربر · سقف ${g.limit}</div></div>
+        </div>
+    `).join('');
+    qs('#groupsGrid').querySelectorAll('.act-btn').forEach(b => b.addEventListener('click', () => showToast('عملیات گروه (نمایشی)')));
+}
+qs('#addGroupBtn').addEventListener('click', () => showToast('افزودن گروه (نمایشی)'));
+
+/* ---------- nodes ---------- */
+const nodesData = [
+    {name:'Node-DE-01', loc:'فرانکفورت، آلمان', status:'active', load:34, users:74},
+    {name:'Node-NL-01', loc:'آمستردام، هلند', status:'active', load:58, users:61},
+    {name:'Node-FR-01', loc:'پاریس، فرانسه', status:'active', load:21, users:39},
+    {name:'Node-TR-02', loc:'استانبول، ترکیه', status:'offline', load:0, users:0},
+];
+function renderNodes(){
+    qs('#nodesTbody').innerHTML = nodesData.map(n => `<tr>
+        <td><div class="client-cell"><div class="client-avatar"><i class="fas fa-server"></i></div><div class="client-name">${n.name}</div></div></td>
+        <td>${n.loc}</td>
+        <td>${n.status === 'active' ? '<span class="badge active"><i class="fas fa-circle"></i>آنلاین</span>' : '<span class="badge offline"><i class="fas fa-circle"></i>آفلاین</span>'}</td>
+        <td><div style="display:flex;align-items:center;gap:8px;"><div class="mini-bar"><span style="width:${n.load}%"></span></div><span class="mono" style="font-size:11px;color:var(--text-3)">${toFa(n.load)}٪</span></div></td>
+        <td>${toFa(n.users)}</td>
+        <td><div class="row-actions">
+            <button class="act-btn" title="ویرایش"><i class="fas fa-pen"></i></button>
+            <button class="act-btn" title="ری‌استارت"><i class="fas fa-arrows-rotate"></i></button>
+            <button class="act-btn danger" title="حذف"><i class="fas fa-trash"></i></button>
+        </div></td>
+    </tr>`).join('');
+    qs('#nodesTbody').querySelectorAll('.act-btn').forEach(b => b.addEventListener('click', () => showToast('عملیات نود (نمایشی)')));
+}
+qs('#addNodeBtn').addEventListener('click', () => showToast('افزودن نود (نمایشی)'));
+
+/* ---------- admins ---------- */
+const adminsData = [
+    {name:'هادی مدیر', email:'hadi@hadi-vpn.example.com', role:'مدیر کل', last:'همین الان', status:'active'},
+    {name:'علی رضایی', email:'ali.r@hadi-vpn.example.com', role:'پشتیبانی', last:'۲ ساعت پیش', status:'active'},
+    {name:'سارا محمدی', email:'sara.m@hadi-vpn.example.com', role:'ناظر مالی', last:'دیروز', status:'paused'},
+];
+function renderAdmins(){
+    qs('#adminsTbody').innerHTML = adminsData.map(a => `<tr>
+        <td><div class="client-cell"><div class="client-avatar">${a.name[0]}</div><div><div class="client-name">${a.name}</div><div class="client-email">${a.email}</div></div></div></td>
+        <td>${a.role}</td>
+        <td class="mono" style="font-size:11.5px">${a.last}</td>
+        <td>${a.status === 'active' ? '<span class="badge active"><i class="fas fa-circle"></i>فعال</span>' : '<span class="badge paused"><i class="fas fa-circle"></i>غیرفعال</span>'}</td>
+        <td><div class="row-actions">
+            <button class="act-btn" title="ویرایش"><i class="fas fa-pen"></i></button>
+            <button class="act-btn danger" title="حذف"><i class="fas fa-trash"></i></button>
+        </div></td>
+    </tr>`).join('');
+    qs('#adminsTbody').querySelectorAll('.act-btn').forEach(b => b.addEventListener('click', () => showToast('عملیات مدیر (نمایشی)')));
+}
+qs('#addAdminBtn').addEventListener('click', () => showToast('افزودن مدیر (نمایشی)'));
+
+/* ---------- roles ---------- */
+const rolesData = [
+    {name:'مدیر کل', desc:'دسترسی کامل به تمام بخش‌های پنل', perms:['کلاینت‌ها','نودها','مدیران','تنظیمات','مسیریابی']},
+    {name:'پشتیبانی', desc:'مدیریت کلاینت‌ها و مشاهده گزارشات', perms:['کلاینت‌ها','گزارشات']},
+    {name:'ناظر مالی', desc:'مشاهده آمار مصرف و گزارشات مالی', perms:['گزارشات']},
+];
+function renderRoles(){
+    qs('#rolesGrid').innerHTML = rolesData.map(r => `
+        <div class="card group-card reveal">
+            <div class="group-card-top">
+                <div class="group-icon"><i class="fas fa-user-shield"></i></div>
+                <div class="row-actions">
+                    <button class="act-btn" title="ویرایش"><i class="fas fa-pen"></i></button>
+                    <button class="act-btn danger" title="حذف"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+            <div><div class="group-name">${r.name}</div><div class="group-meta">${r.desc}</div></div>
+            <div class="perm-wrap">${r.perms.map(p => `<span class="perm-chip">${p}</span>`).join('')}</div>
+        </div>
+    `).join('');
+    qs('#rolesGrid').querySelectorAll('.act-btn').forEach(b => b.addEventListener('click', () => showToast('عملیات نقش (نمایشی)')));
+}
+qs('#addRoleBtn').addEventListener('click', () => showToast('افزودن نقش (نمایشی)'));
+
+/* ---------- exports (outbounds) ---------- */
+const exportsData = [
+    {tag:'outbound-direct', protocol:'Freedom', dest:'اتصال مستقیم', status:'active'},
+    {tag:'outbound-block', protocol:'Blackhole', dest:'مسدودسازی تبلیغات', status:'active'},
+    {tag:'outbound-warp', protocol:'WireGuard', dest:'Cloudflare WARP', status:'disabled'},
+];
+function renderExports(){
+    qs('#exportsTbody').innerHTML = exportsData.map(e => `<tr>
+        <td><span class="mono" style="font-size:11.5px">${e.tag}</span></td>
+        <td>${e.protocol}</td>
+        <td>${e.dest}</td>
+        <td>${e.status === 'active' ? '<span class="badge active"><i class="fas fa-circle"></i>فعال</span>' : '<span class="badge disabled"><i class="fas fa-circle"></i>غیرفعال</span>'}</td>
+        <td><div class="row-actions">
+            <button class="act-btn" title="ویرایش"><i class="fas fa-pen"></i></button>
+            <button class="act-btn danger" title="حذف"><i class="fas fa-trash"></i></button>
+        </div></td>
+    </tr>`).join('');
+    qs('#exportsTbody').querySelectorAll('.act-btn').forEach(b => b.addEventListener('click', () => showToast('عملیات خروجی (نمایشی)')));
+}
+qs('#addExportBtn').addEventListener('click', () => showToast('افزودن خروجی (نمایشی)'));
+
+/* ---------- routing rules ---------- */
+const routingData = [
+    {priority:1, src:'inbound-vless-tls', dest:'outbound-direct', action:'مجاز', status:'active'},
+    {priority:2, src:'همه ورودی‌ها', dest:'outbound-block', action:'مسدود (تبلیغات)', status:'active'},
+    {priority:3, src:'inbound-trojan', dest:'outbound-warp', action:'مجاز', status:'disabled'},
+];
+function renderRouting(){
+    qs('#routingTbody').innerHTML = routingData.map(r => `<tr>
+        <td class="mono">${toFa(r.priority)}</td>
+        <td><span class="mono" style="font-size:11.5px">${r.src}</span></td>
+        <td><span class="mono" style="font-size:11.5px">${r.dest}</span></td>
+        <td>${r.action}</td>
+        <td>${r.status === 'active' ? '<span class="badge active"><i class="fas fa-circle"></i>فعال</span>' : '<span class="badge disabled"><i class="fas fa-circle"></i>غیرفعال</span>'}</td>
+        <td><div class="row-actions">
+            <button class="act-btn" title="ویرایش"><i class="fas fa-pen"></i></button>
+            <button class="act-btn danger" title="حذف"><i class="fas fa-trash"></i></button>
+        </div></td>
+    </tr>`).join('');
+    qs('#routingTbody').querySelectorAll('.act-btn').forEach(b => b.addEventListener('click', () => showToast('عملیات قانون (نمایشی)')));
+}
+qs('#addRuleBtn').addEventListener('click', () => showToast('افزودن قانون (نمایشی)'));
+
+/* ---------- init everything ---------- */
+function initDashboardStats(){
+    // توجه: statClients و statTraffic از داده واقعی در applyClientFilters() پر می‌شوند، اینجا دست‌نخورده می‌مانند.
+    countUp(qs('#statNodes'), 8);
+    qs('#statUptime').textContent = '۲h';
+    countUp(qs('#connTcp'), 295);
+    countUp(qs('#connUdp'), 8);
+}
+function initStatisticsMini(){
+    qs('#stUp').textContent = '312 GB';
+    qs('#stDown').textContent = '1.24 TB';
+    qs('#stInbounds').textContent = toFa(6);
+    qs('#stCpu').textContent = toFa(23) + '٪';
+}
+
+/* ---------- init / auth gate ----------
+   بخش «کلاینت‌ها» و آمار مربوط به آن (تعداد کاربر فعال، ترافیک مصرفی) از
+   /api/users واقعی خوانده می‌شود. بقیه‌ی بخش‌ها (ورودی‌ها، گروه‌ها، نودها،
+   مدیران، نقش‌ها، خروجی‌ها، مسیریابی و نمودارها) داده نمایشی/ثابت هستند،
+   چون Worker فعلی فقط بک‌اند مدیریت کاربر VLESS را پیاده‌سازی کرده است.
+*/
+async function initApp(){
+    await renderClients();   // کاربران واقعی + به‌روزرسانی کارت‌های آماری کلاینت/ترافیک
+    renderRecent();
+    drawLineChart(weekData);
+    drawDonut();
+    drawBarChart();
+    renderTopUsers();
+    renderGauges();
+    renderResourceBars();
+    drawConnMap();
+    renderActivities();
+    renderInbounds();
+    renderGroups();
+    renderNodes();
+    renderAdmins();
+    renderRoles();
+    renderExports();
+    renderRouting();
+    initDashboardStats();
+    initStatisticsMini();
+}
+
+function showLogin(){
+    qs('#authGate').style.display = 'flex';
+    qs('#shell').style.display = 'none';
+}
+function showApp(){
+    qs('#authGate').style.display = 'none';
+    qs('#shell').style.display = 'flex';
+    initApp();
+}
+async function doLogin(){
+    const password = qs('#authPassword').value;
+    qs('#authError').textContent = '';
+    try {
+        const res = await fetch('/api/login', {
+            method:'POST', headers:{'content-type':'application/json'},
+            body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+        if(data.ok){ showApp(); } else { qs('#authError').textContent = data.message || 'رمز عبور اشتباه است'; }
+    } catch(e){
+        qs('#authError').textContent = 'خطا در اتصال به سرور';
+    }
+}
+qs('#authLoginBtn').addEventListener('click', doLogin);
+qs('#authPassword').addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
+
+async function checkAuthAndStart(){
+    try {
+        const res = await fetch('/api/users');
+        if(res.status === 200){ showApp(); return; }
+    } catch(e){}
+    showLogin();
+}
+checkAuthAndStart();
+</script>
+</body>
+</html>
