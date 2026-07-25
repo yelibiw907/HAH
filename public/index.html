@@ -1175,6 +1175,9 @@ function vlessLink(u){
     const host = location.hostname;
     return `vless://${u.uuid}@${host}:443?encryption=none&security=tls&sni=${host}&type=ws&host=${host}&path=%2Fvless-ws#${encodeURIComponent(u.name)}`;
 }
+function subLink(u){
+    return `${location.origin}/sub/${u.uuid}`;
+}
 
 /* ---------- fetch از Worker ---------- */
 async function fetchClients(){
@@ -1214,6 +1217,7 @@ function clientRow(c, withActions=true){
         ${withActions ? `<td><div class="row-actions">
             <button class="act-btn" title="ویرایش" data-uuid="${c.uuid}"><i class="fas fa-pen"></i></button>
             <button class="act-btn" title="کپی لینک" data-uuid="${c.uuid}"><i class="fas fa-link"></i></button>
+            <button class="act-btn" title="کپی لینک سابسکرایشن" data-uuid="${c.uuid}"><i class="fas fa-rss"></i></button>
             <button class="act-btn" title="${c.enabled ? 'توقف' : 'فعال‌سازی'}" data-uuid="${c.uuid}"><i class="fas fa-power-off"></i></button>
             <button class="act-btn danger" title="حذف" data-uuid="${c.uuid}"><i class="fas fa-trash"></i></button>
         </div></td>` : ''}
@@ -1266,6 +1270,13 @@ function applyClientFilters(){
             const c = clients.find(x => x.uuid === btn.dataset.uuid);
             navigator.clipboard.writeText(vlessLink(c));
             showToast('لینک اتصال کپی شد');
+        });
+    });
+    tbody.querySelectorAll('.act-btn[title="کپی لینک سابسکرایشن"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const c = clients.find(x => x.uuid === btn.dataset.uuid);
+            navigator.clipboard.writeText(subLink(c));
+            showToast('لینک سابسکرایشن کپی شد');
         });
     });
     tbody.querySelectorAll('.act-btn[title="توقف"], .act-btn[title="فعال‌سازی"]').forEach(btn => {
@@ -1388,13 +1399,17 @@ qs('#trafficRange')?.addEventListener('click', (e) => {
 function drawDonut(){
     const svg = qs('#donutChart');
     const legend = qs('#donutLegend');
-    const values = [68,18,10,4]; // percentages, sum=100
-    const total = values.reduce((a,b)=>a+b,0);
+    // این پنل فقط پروتکل VLESS را پیاده‌سازی کرده؛ بنابراین واقعیت همیشه ۱۰۰٪ VLESS است.
+    const breakdown = (realStats && realStats.protocolBreakdown) || { VLESS: 100, VMESS: 0, TROJAN: 0, OTHER: 0 };
+    const totalUsersCount = (realStats && realStats.totalUsers) ?? clients.length;
+    const values = [breakdown.VLESS, breakdown.VMESS, breakdown.TROJAN, breakdown.OTHER];
+    const total = values.reduce((a,b)=>a+b,0) || 1;
     const cx=100, cy=100, r=72, sw=22;
     const circumference = 2*Math.PI*r;
     let offsetAcc = 0;
     let circles = '';
     values.forEach((v,i) => {
+        if (v <= 0) return;
         const frac = v/total;
         const len = frac*circumference;
         const gap = circumference - len;
@@ -1408,7 +1423,7 @@ function drawDonut(){
     });
     svg.innerHTML = `${circles}
         <circle cx="${cx}" cy="${cy}" r="${r-sw/2-6}" fill="#181818" stroke="#2D2D2D" stroke-width="1"/>
-        <text x="${cx}" y="${cy-6}" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="800" font-family="JetBrains Mono, monospace">${toFa(128)}</text>
+        <text x="${cx}" y="${cy-6}" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="800" font-family="JetBrains Mono, monospace">${toFa(totalUsersCount)}</text>
         <text x="${cx}" y="${cy+16}" text-anchor="middle" fill="#6f6f6f" font-size="11">کل کاربران</text>`;
     legend.innerHTML = values.map((v,i) =>
         `<span class="legend-item"><span class="legend-dot" style="background:${protocols[i].color}"></span>${protocols[i].name} · ${toFa(v)}٪</span>`
@@ -1484,37 +1499,27 @@ async function renderGauges(){
             <div class="gauge-sub">${r.label}</div>
         </div>
     `).join('');
-    qs('#gaugeRow').innerHTML = mainGauges + `
-        <div class="gauge" id="reqGaugeSlot">
-            ${drawGauge(0)}
-            <div class="gauge-label">در حال دریافت...</div>
-            <div class="gauge-sub">ریکوئست‌ها</div>
-        </div>
-    `;
-
-    try {
-        const res = await fetch('/api/stats');
-        const data = await res.json();
-        const slot = qs('#reqGaugeSlot');
-        if (data.ok && data.stats && data.stats.available) {
-            const { requestsToday, dailyLimit } = data.stats;
-            const pct = Math.min(100, (requestsToday / dailyLimit) * 100);
-            slot.innerHTML = `
+    let reqGaugeHtml;
+    if (realStats && realStats.requestStats && realStats.requestStats.available) {
+        const { requestsToday, dailyLimit } = realStats.requestStats;
+        const pct = Math.min(100, (requestsToday / dailyLimit) * 100);
+        reqGaugeHtml = `
+            <div class="gauge">
                 ${drawGauge(pct)}
                 <div class="gauge-label">${toFa(dailyLimit.toLocaleString())} / ${toFa(requestsToday.toLocaleString())}</div>
                 <div class="gauge-sub">ریکوئست‌های امروز</div>
-            `;
-        } else {
-            slot.innerHTML = `
+            </div>
+        `;
+    } else {
+        reqGaugeHtml = `
+            <div class="gauge">
                 ${drawGauge(0)}
                 <div class="gauge-label" style="font-size:10px;color:var(--text-3)">پیکربندی نشده</div>
                 <div class="gauge-sub">ریکوئست‌ها</div>
-            `;
-        }
-    } catch (e) {
-        const slot = qs('#reqGaugeSlot');
-        if (slot) slot.querySelector('.gauge-label').textContent = 'خطا در دریافت';
+            </div>
+        `;
     }
+    qs('#gaugeRow').innerHTML = mainGauges + reqGaugeHtml;
 }
 
 /* ---------- resource bars (charts row) ---------- */
@@ -1723,9 +1728,12 @@ qs('#addRuleBtn').addEventListener('click', () => showToast('افزودن قان
 
 /* ---------- init everything ---------- */
 function initDashboardStats(){
-    // توجه: statClients و statTraffic از داده واقعی در applyClientFilters() پر می‌شوند، اینجا دست‌نخورده می‌مانند.
-    countUp(qs('#statNodes'), 8);
-    qs('#statUptime').textContent = '۲h';
+    // توجه: statClients و statTraffic از داده واقعی در applyClientFilters()/initApp() پر می‌شوند.
+    // این پنل روی یک Cloudflare Worker واحد اجراست، پس عدد واقعی «نود فعال» همیشه ۱ است.
+    countUp(qs('#statNodes'), 1);
+    qs('#statUptime').textContent = 'زنده';
+    // تعداد اتصالات TCP/UDP لحظه‌ای و نقشه اتصالات، داده واقعی نیستند (نیازمند Durable Objects است) —
+    // فعلاً دست‌نخورده نمایش داده می‌شوند تا با اضافه‌شدن آن قابلیت، جایگزین شوند.
     countUp(qs('#connTcp'), 295);
     countUp(qs('#connUdp'), 8);
 }
@@ -1742,10 +1750,24 @@ function initStatisticsMini(){
    مدیران، نقش‌ها، خروجی‌ها، مسیریابی و نمودارها) داده نمایشی/ثابت هستند،
    چون Worker فعلی فقط بک‌اند مدیریت کاربر VLESS را پیاده‌سازی کرده است.
 */
+let realStats = null;
+async function fetchRealStats(){
+    try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        if (data.ok) realStats = data;
+    } catch(e) { realStats = null; }
+}
+
 async function initApp(){
     await renderClients();   // کاربران واقعی + به‌روزرسانی کارت‌های آماری کلاینت/ترافیک
+    await fetchRealStats();  // مصرف روزانه، نمودار ۷ روزه، تعداد کاربران، آمار ریکوئست
     renderRecent();
-    drawLineChart(weekData);
+    if (realStats && realStats.last7Days) {
+        drawLineChart(realStats.last7Days.map(d => Math.round(d.bytes / (1024*1024)))); // بایت → مگابایت
+    } else {
+        drawLineChart(weekData);
+    }
     drawDonut();
     drawBarChart();
     renderTopUsers();
@@ -1762,6 +1784,11 @@ async function initApp(){
     renderRouting();
     initDashboardStats();
     initStatisticsMini();
+
+    // کارت «مصرف کل امروز» را با عدد واقعی امروز (نه مجموع کل تاریخ) به‌روزرسانی کن
+    if (realStats && qs('#statTraffic')) {
+        qs('#statTraffic').textContent = (realStats.todayBytes / (1024*1024)).toFixed(2);
+    }
 }
 
 function showLogin(){
