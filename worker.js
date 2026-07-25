@@ -345,6 +345,59 @@ async function requireAuth(request, env) {
   return verifySessionToken(env, token);
 }
 
+// ---------- آمار واقعی ریکوئست از Cloudflare Analytics API ----------
+async function getWorkerStats(env) {
+  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
+    return { available: false, reason: 'CF_API_TOKEN یا CF_ACCOUNT_ID تنظیم نشده' };
+  }
+  const now = new Date();
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  const nowIso = now.toISOString();
+
+  const query = `
+    query GetWorkerStats($accountTag: String!, $scriptName: String!, $start: Time!, $end: Time!) {
+      viewer {
+        accounts(filter: { accountTag: $accountTag }) {
+          workersInvocationsAdaptive(
+            filter: { scriptName: $scriptName, datetime_geq: $start, datetime_leq: $end }
+            limit: 1000
+          ) {
+            sum { requests }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.CF_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        variables: {
+          accountTag: env.CF_ACCOUNT_ID,
+          scriptName: env.WORKER_NAME || 'hah',
+          start: startOfDay,
+          end: nowIso,
+        },
+      }),
+    });
+    const data = await res.json();
+    if (data.errors) {
+      return { available: false, reason: data.errors.map((e) => e.message).join(', ') };
+    }
+    const rows = data?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive || [];
+    const requestsToday = rows.reduce((sum, r) => sum + (r.sum?.requests || 0), 0);
+    return { available: true, requestsToday, dailyLimit: 100000 };
+  } catch (err) {
+    return { available: false, reason: err.message };
+  }
+}
+
 async function handleApi(request, env, url) {
   const path = url.pathname;
 
@@ -365,6 +418,11 @@ async function handleApi(request, env, url) {
 
   const authed = await requireAuth(request, env);
   if (!authed) return jsonResponse({ ok: false, message: 'ابتدا وارد شوید' }, 401);
+
+  if (path === '/api/stats' && request.method === 'GET') {
+    const stats = await getWorkerStats(env);
+    return jsonResponse({ ok: true, stats });
+  }
 
   if (path === '/api/users' && request.method === 'GET') {
     const users = await listUsers(env);

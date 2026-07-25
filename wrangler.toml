@@ -3,6 +3,11 @@ main = "worker.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# نام واقعی Worker شما در کلودفلر (برای فیلتر کردن آمار درخواست‌ها).
+# اگر اسم پروژه‌ات تو داشبورد کلودفلر چیز دیگه‌ایه (مثلاً hah)، همون رو اینجا بذار.
+[vars]
+WORKER_NAME = "hah"
+
 # فایل‌های استاتیک داشبورد (Hadi Panel) از این پوشه سرو می‌شوند
 [assets]
 directory = "./public"
@@ -12,7 +17,9 @@ binding = "ASSETS"
 # npx wrangler kv namespace create VLESS_USERS
 [[kv_namespaces]]
 binding = "VLESS_USERS"
-id = "c636ec79f8ed4a96adf81100530f45cd"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 
-# رمز عبور پنل مدیریت را با دستور زیر به صورت Secret تنظیم کنید (در این فایل ننویسید):
+# این‌ها را به صورت Secret تنظیم کنید (در این فایل ننویسید):
 # npx wrangler secret put ADMIN_PASSWORD
+# npx wrangler secret put CF_API_TOKEN
+# npx wrangler secret put CF_ACCOUNT_ID
