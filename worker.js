@@ -83,12 +83,33 @@ function isUserAllowed(user) {
 
 // شمارنده مصرف: برای جلوگیری از نوشتن مکرر روی KV (که نرخ محدود دارد)
 // مصرف هر اتصال را در حافظه جمع می‌زنیم و فقط در پایان اتصال (یا هر چند ثانیه) در KV ذخیره می‌کنیم.
+function dailyKey(date) {
+  return 'daily:' + date.toISOString().slice(0, 10); // daily:YYYY-MM-DD
+}
+
 async function flushUsage(env, uuid, bytesDelta) {
   if (bytesDelta <= 0) return;
   const user = await getUser(env, uuid);
-  if (!user) return;
-  user.trafficUsedBytes = (user.trafficUsedBytes || 0) + bytesDelta;
-  await saveUser(env, user);
+  if (user) {
+    user.trafficUsedBytes = (user.trafficUsedBytes || 0) + bytesDelta;
+    await saveUser(env, user);
+  }
+  // مصرف کل روزانه (برای کارت «مصرف امروز» و نمودار ۷ روز گذشته)
+  const key = dailyKey(new Date());
+  const current = Number((await env.VLESS_USERS.get(key)) || 0);
+  await env.VLESS_USERS.put(key, String(current + bytesDelta));
+}
+
+async function getDailyStats(env) {
+  const last7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    const key = dailyKey(d);
+    const bytes = Number((await env.VLESS_USERS.get(key)) || 0);
+    last7.push({ date: key.replace('daily:', ''), bytes });
+  }
+  const todayBytes = last7[last7.length - 1].bytes;
+  return { todayBytes, last7 };
 }
 
 // ---------- خواندن هدر پروتکل VLESS ----------
@@ -420,8 +441,20 @@ async function handleApi(request, env, url) {
   if (!authed) return jsonResponse({ ok: false, message: 'ابتدا وارد شوید' }, 401);
 
   if (path === '/api/stats' && request.method === 'GET') {
-    const stats = await getWorkerStats(env);
-    return jsonResponse({ ok: true, stats });
+    const requestStats = await getWorkerStats(env);
+    const daily = await getDailyStats(env);
+    const users = await listUsers(env);
+    const activeUsers = users.filter((u) => isUserAllowed(u).ok).length;
+    return jsonResponse({
+      ok: true,
+      requestStats,
+      todayBytes: daily.todayBytes,
+      last7Days: daily.last7,
+      activeUsers,
+      totalUsers: users.length,
+      // این پنل فقط پروتکل VLESS را پیاده‌سازی کرده، بنابراین واقعیت همین است:
+      protocolBreakdown: { VLESS: 100, VMESS: 0, TROJAN: 0, OTHER: 0 },
+    });
   }
 
   if (path === '/api/users' && request.method === 'GET') {
@@ -467,8 +500,13 @@ async function handleApi(request, env, url) {
   return jsonResponse({ ok: false, message: 'مسیر نامعتبر' }, 404);
 }
 
-function buildVlessLink(uuid, hostName, name) {
-  // VLESS + WebSocket + TLS روی پورت 443 (استاندارد برای عبور از فیلترینگ)
+
+// =============================================================
+// روتر اصلی
+// =============================================================
+
+// ---------- لینک سابسکرایشن (برای اپلیکیشن‌های کلاینت مثل v2rayNG / NekoBox / Streisand) ----------
+function buildVlessUri(uuid, hostName, name) {
   const params = new URLSearchParams({
     encryption: 'none',
     security: 'tls',
@@ -480,10 +518,26 @@ function buildVlessLink(uuid, hostName, name) {
   return `vless://${uuid}@${hostName}:443?${params.toString()}#${encodeURIComponent(name)}`;
 }
 
+async function handleSubscription(request, env, uuid) {
+  const user = await getUser(env, uuid);
+  const allowed = isUserAllowed(user);
+  if (!allowed.ok) {
+    // خروجی خالی برمی‌گردانیم تا کلاینت اشتباهی وصل نشود (نه خطای صریح، طبق رفتار استاندارد پنل‌های VLESS)
+    return new Response('', { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+  }
+  const hostName = new URL(request.url).hostname;
+  const link = buildVlessUri(user.uuid, hostName, user.name);
+  const body = btoa(unescape(encodeURIComponent(link + '\n')));
 
-// =============================================================
-// روتر اصلی
-// =============================================================
+  const headers = { 'content-type': 'text/plain; charset=utf-8' };
+  // هدر استاندارد Subscription-Userinfo: کلاینت‌هایی مثل NekoBox/Hiddify مصرف و انقضا را از همین‌جا می‌خوانند
+  const used = user.trafficUsedBytes || 0;
+  const total = user.trafficLimitGB > 0 ? user.trafficLimitGB * 1024 * 1024 * 1024 : 0;
+  const expire = user.expireAt ? Math.floor(new Date(user.expireAt).getTime() / 1000) : 0;
+  headers['subscription-userinfo'] = `upload=0; download=${used}; total=${total}; expire=${expire}`;
+
+  return new Response(body, { status: 200, headers });
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -497,6 +551,12 @@ export default {
       } catch (err) {
         return new Response('WebSocket error: ' + err.message, { status: 500 });
       }
+    }
+
+    // لینک سابسکرایشن هر کاربر: /sub/<uuid>  (بدون نیاز به لاگین، فقط با uuid خودش)
+    const subMatch = url.pathname.match(/^\/sub\/([0-9a-f-]{36})$/);
+    if (subMatch) {
+      return handleSubscription(request, env, subMatch[1]);
     }
 
     // API مدیریتی
