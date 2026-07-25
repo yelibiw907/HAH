@@ -61,7 +61,11 @@ async function listUsers(env) {
   const users = [];
   for (const key of list.keys) {
     const raw = await env.VLESS_USERS.get(key.name);
-    if (raw) users.push(JSON.parse(raw));
+    if (raw) {
+      const user = JSON.parse(raw);
+      user.dailyRequestsUsed = getEffectiveDailyCount(user); // بدون هیچ KV read اضافه
+      users.push(user);
+    }
   }
   return users;
 }
@@ -81,8 +85,30 @@ function isUserAllowed(user) {
   return { ok: true };
 }
 
+// ---------- محدودیت روزانه تعداد ریکوئست (اتصال) هر کاربر ----------
+// بهینه‌سازی: به‌جای یک KV key جداگانه (که هر اتصال یک read + یک write اضافه می‌کرد)،
+// شمارنده روز داخل همان آبجکت کاربر ذخیره می‌شود؛ چون کاربر را برای بررسی مجوز
+// (isUserAllowed) در هر حالت می‌خوانیم، این کار صفر KV-operation اضافه دارد.
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+function getEffectiveDailyCount(user) {
+  return user.dailyRequestDate === todayStr() ? (user.dailyRequestCount || 0) : 0;
+}
+// روی آبجکت user در حافظه تغییر می‌دهد (mutate)؛ ذخیره‌سازی نهایی به عهده‌ی صدازننده است.
+// اگر سقف پر شده باشد false برمی‌گرداند و چیزی را تغییر نمی‌دهد.
+function bumpDailyRequest(user) {
+  if (!user.dailyRequestLimit || user.dailyRequestLimit <= 0) return true; // نامحدود
+  const today = todayStr();
+  const current = user.dailyRequestDate === today ? (user.dailyRequestCount || 0) : 0;
+  if (current >= user.dailyRequestLimit) return false;
+  user.dailyRequestDate = today;
+  user.dailyRequestCount = current + 1;
+  return true;
+}
+
 // شمارنده مصرف: برای جلوگیری از نوشتن مکرر روی KV (که نرخ محدود دارد)
-// مصرف هر اتصال را در حافظه جمع می‌زنیم و فقط در پایان اتصال (یا هر چند ثانیه) در KV ذخیره می‌کنیم.
+// مصرف هر اتصال را در حافظه جمع می‌زنیم و فقط هر چند وقت یک‌بار (یا وقتی حجم قابل‌توجهی رد و بدل شد) در KV ذخیره می‌کنیم.
 function dailyKey(date) {
   return 'daily:' + date.toISOString().slice(0, 10); // daily:YYYY-MM-DD
 }
@@ -230,13 +256,18 @@ async function handleVlessConnection(request, env) {
   let usageBytes = 0;
   let vlessHeaderSent = false;
 
+  // بهینه‌سازی: قبلاً هر ۵ ثانیه، حالا هر ۳۰ ثانیه (یا فوراً اگر حجم قابل‌توجهی رد و بدل شد).
+  // چون سقف رایگان KV کلودفلر روزی فقط ۱۰۰۰ نوشتن است، این تغییر تعداد نوشتن‌ها را ~۶ برابر کاهش می‌دهد.
+  const FLUSH_INTERVAL_MS = 30000;
+  const FLUSH_BYTES_THRESHOLD = 8 * 1024 * 1024; // اگر ۸ مگابایت رد و بدل شد، زودتر از موعد ذخیره کن
+
   const flushInterval = setInterval(() => {
     if (userUuid && usageBytes > 0) {
       const toFlush = usageBytes;
       usageBytes = 0;
       flushUsage(env, userUuid, toFlush).catch(() => {});
     }
-  }, 5000);
+  }, FLUSH_INTERVAL_MS);
 
   const closeAll = () => {
     clearInterval(flushInterval);
@@ -248,6 +279,16 @@ async function handleVlessConnection(request, env) {
     try { remoteSocket && remoteSocket.close(); } catch (e) {}
   };
 
+  // اگر حجم رد و بدل‌شده از آستانه رد شد، زودتر از تایمر ۳۰ ثانیه‌ای ذخیره کن
+  // (برای اتصال‌های پرترافیک، تا مصرف ثبت‌شده خیلی از واقعیت عقب نماند).
+  const maybeEarlyFlush = () => {
+    if (userUuid && usageBytes >= FLUSH_BYTES_THRESHOLD) {
+      const toFlush = usageBytes;
+      usageBytes = 0;
+      flushUsage(env, userUuid, toFlush).catch(() => {});
+    }
+  };
+
   readableStream
     .pipeTo(
       new WritableStream({
@@ -257,6 +298,7 @@ async function handleVlessConnection(request, env) {
             await writer.write(chunk);
             usageBytes += chunk.byteLength;
             writer.releaseLock();
+            maybeEarlyFlush();
             return;
           }
 
@@ -270,6 +312,12 @@ async function handleVlessConnection(request, env) {
           if (!allowed.ok) {
             throw new Error('دسترسی رد شد: ' + allowed.reason);
           }
+          if (!bumpDailyRequest(user)) {
+            throw new Error('دسترسی رد شد: محدودیت روزانه تعداد ریکوئست تمام شده');
+          }
+          // همان یک write که در پایان اتصال/هر چند ثانیه برای مصرف ترافیک انجام می‌شود،
+          // شمارنده روزانه به‌روزشده را هم با خودش ذخیره می‌کند (بدون write جداگانه).
+          await saveUser(env, user);
           userUuid = header.uuid;
 
           remoteSocket = connect({ hostname: header.address, port: header.port });
@@ -297,6 +345,7 @@ async function handleVlessConnection(request, env) {
                   if (webSocket.readyState === WS_READY_STATE_OPEN) {
                     webSocket.send(remoteChunk);
                     usageBytes += remoteChunk.byteLength;
+                    maybeEarlyFlush();
                   }
                 },
                 close() { closeAll(); },
@@ -469,6 +518,7 @@ async function handleApi(request, env, url) {
       name: body.name || 'کاربر بدون نام',
       trafficLimitGB: Number(body.trafficLimitGB) || 0, // 0 = نامحدود
       trafficUsedBytes: 0,
+      dailyRequestLimit: Number(body.dailyRequestLimit) || 0, // 0 = نامحدود
       expireAt: body.expireAt || null, // ISO date یا null برای نامحدود
       enabled: true,
       createdAt: new Date().toISOString(),
@@ -485,6 +535,7 @@ async function handleApi(request, env, url) {
     const body = await request.json().catch(() => ({}));
     if (body.name !== undefined) existing.name = body.name;
     if (body.trafficLimitGB !== undefined) existing.trafficLimitGB = Number(body.trafficLimitGB);
+    if (body.dailyRequestLimit !== undefined) existing.dailyRequestLimit = Number(body.dailyRequestLimit);
     if (body.expireAt !== undefined) existing.expireAt = body.expireAt;
     if (body.enabled !== undefined) existing.enabled = !!body.enabled;
     if (body.resetTraffic) existing.trafficUsedBytes = 0;
@@ -518,19 +569,144 @@ function buildVlessUri(uuid, hostName, name) {
   return `vless://${uuid}@${hostName}:443?${params.toString()}#${encodeURIComponent(name)}`;
 }
 
+// ---------- صفحه گرافیکی اطلاعات سابسکرایشن (برای زمانی که لینک در مرورگر باز شود) ----------
+function fmtBytesFa(bytes) {
+  if (!bytes) return '0 مگابایت';
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1) return gb.toFixed(2) + ' گیگابایت';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' مگابایت';
+}
+
+function subInfoPage(user, subUrl, configLink, statusInfo) {
+  const used = user.trafficUsedBytes || 0;
+  const limitBytes = user.trafficLimitGB > 0 ? user.trafficLimitGB * 1024 * 1024 * 1024 : 0;
+  const pct = limitBytes > 0 ? Math.min(100, Math.round((used / limitBytes) * 100)) : 0;
+  const expireText = user.expireAt
+    ? new Date(user.expireAt).toLocaleDateString('fa-IR')
+    : 'نامحدود';
+  const daysLeft = user.expireAt
+    ? Math.ceil((new Date(user.expireAt).getTime() - Date.now()) / 86400000)
+    : null;
+  const statusColor = statusInfo.ok ? '#3ddc97' : '#e25858';
+  const statusText = statusInfo.ok ? 'فعال' : statusInfo.reason;
+
+  return `<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${user.name} — اطلاعات اشتراک</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Tahoma, Vazir, sans-serif; background:#0a0a0a; color:#e9e9e9; margin:0; padding:20px 14px; min-height:100vh; }
+  .wrap { max-width: 420px; margin: 0 auto; }
+  .card { background:#181818; border:1px solid #2d2d2d; border-radius:16px; padding:20px; margin-bottom:14px; }
+  .top { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
+  .avatar { width:46px; height:46px; border-radius:50%; background:linear-gradient(135deg,#FFD54F,#e0b13a); display:flex; align-items:center; justify-content:center; font-weight:800; color:#0a0a0a; font-size:16px; }
+  .name { font-weight:700; font-size:16px; }
+  .badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; font-size:12px; margin-top:4px; }
+  .dot { width:7px; height:7px; border-radius:50%; background:${statusColor}; }
+  .row { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262626; font-size:13px; }
+  .row:last-child { border-bottom:none; }
+  .row .l { color:#9a9a9a; }
+  .row .v { font-family:'JetBrains Mono',monospace; font-weight:600; }
+  .bar { height:8px; border-radius:99px; background:#262626; overflow:hidden; margin-top:10px; }
+  .bar span { display:block; height:100%; background:${pct>=90?'#e25858':'#FFD54F'}; width:${pct}%; }
+  .barlabel { display:flex; justify-content:space-between; font-size:11px; color:#9a9a9a; margin-top:6px; }
+  h3 { font-size:13px; color:#9a9a9a; margin:0 0 10px; font-weight:600; }
+  .linkbox { display:flex; gap:8px; align-items:center; background:#101010; border:1px solid #2d2d2d; border-radius:10px; padding:10px 12px; }
+  .linkbox input { flex:1; background:transparent; border:none; color:#e9e9e9; font-family:monospace; font-size:11px; direction:ltr; text-align:left; outline:none; }
+  .copybtn { background:#FFD54F; color:#0a0a0a; border:none; border-radius:8px; padding:8px 12px; font-weight:700; font-size:12px; cursor:pointer; white-space:nowrap; }
+  .foot { text-align:center; color:#666; font-size:11px; margin-top:6px; }
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:#FFD54F; color:#0a0a0a; padding:9px 18px; border-radius:999px; font-size:13px; font-weight:700; opacity:0; transition:.25s; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="top">
+      <div class="avatar">${(user.name||'ک').trim()[0] || 'ک'}</div>
+      <div>
+        <div class="name">${user.name}</div>
+        <span class="badge" style="background:${statusColor}22;color:${statusColor}"><span class="dot"></span>${statusText}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>مصرف ترافیک</h3>
+    <div class="row"><span class="l">مصرف‌شده</span><span class="v">${fmtBytesFa(used)}</span></div>
+    <div class="row"><span class="l">سقف مجاز</span><span class="v">${limitBytes > 0 ? fmtBytesFa(limitBytes) : 'نامحدود'}</span></div>
+    ${limitBytes > 0 ? `<div class="bar"><span></span></div><div class="barlabel"><span>${pct}٪ مصرف‌شده</span><span>${fmtBytesFa(Math.max(0,limitBytes-used))} باقی‌مانده</span></div>` : ''}
+  </div>
+
+  <div class="card">
+    <h3>اعتبار زمانی</h3>
+    <div class="row"><span class="l">تاریخ انقضا</span><span class="v">${expireText}</span></div>
+    ${daysLeft !== null ? `<div class="row"><span class="l">${daysLeft >= 0 ? 'روزهای باقی‌مانده' : 'منقضی شده'}</span><span class="v" style="color:${daysLeft < 0 ? '#e25858' : (daysLeft <= 3 ? '#FFD54F' : '#e9e9e9')}">${daysLeft >= 0 ? daysLeft + ' روز' : Math.abs(daysLeft) + ' روز پیش'}</span></div>` : ''}
+  </div>
+
+  <div class="card">
+    <h3>لینک سابسکرایشن (برای اپلیکیشن VPN)</h3>
+    <div class="linkbox">
+      <input readonly value="${subUrl}" onclick="this.select()">
+      <button class="copybtn" onclick="copyText('${subUrl}')">کپی</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>کانفیگ مستقیم (تک‌کاربره)</h3>
+    <div class="linkbox">
+      <input readonly value="${configLink}" onclick="this.select()">
+      <button class="copybtn" onclick="copyText('${configLink}')">کپی</button>
+    </div>
+  </div>
+
+  <div class="foot">این لینک را در اختیار دیگران قرار ندهید</div>
+</div>
+<div class="toast" id="toast">کپی شد</div>
+<script>
+function copyText(t){
+  navigator.clipboard.writeText(t).then(()=>{
+    const el = document.getElementById('toast');
+    el.classList.add('show');
+    setTimeout(()=>el.classList.remove('show'), 1500);
+  });
+}
+</script>
+</body>
+</html>`;
+}
+
 async function handleSubscription(request, env, uuid) {
   const user = await getUser(env, uuid);
   const allowed = isUserAllowed(user);
-  if (!allowed.ok) {
-    // خروجی خالی برمی‌گردانیم تا کلاینت اشتباهی وصل نشود (نه خطای صریح، طبق رفتار استاندارد پنل‌های VLESS)
+  const hostName = new URL(request.url).hostname;
+
+  const acceptHeader = request.headers.get('accept') || '';
+  const wantsHtml = acceptHeader.includes('text/html');
+
+  if (!user) {
+    if (wantsHtml) return new Response('کاربر یافت نشد', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
     return new Response('', { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   }
-  const hostName = new URL(request.url).hostname;
-  const link = buildVlessUri(user.uuid, hostName, user.name);
-  const body = btoa(unescape(encodeURIComponent(link + '\n')));
 
+  const link = buildVlessUri(user.uuid, hostName, user.name);
+
+  // مرورگر → صفحه گرافیکی وضعیت اشتراک
+  if (wantsHtml) {
+    const subUrl = `${new URL(request.url).origin}/sub/${user.uuid}`;
+    const page = subInfoPage(user, subUrl, link, allowed);
+    return new Response(page, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+  }
+
+  // اپلیکیشن VPN → خروجی استاندارد Base64
+  if (!allowed.ok) {
+    return new Response('', { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+  }
+  const body = btoa(unescape(encodeURIComponent(link + '\n')));
   const headers = { 'content-type': 'text/plain; charset=utf-8' };
-  // هدر استاندارد Subscription-Userinfo: کلاینت‌هایی مثل NekoBox/Hiddify مصرف و انقضا را از همین‌جا می‌خوانند
   const used = user.trafficUsedBytes || 0;
   const total = user.trafficLimitGB > 0 ? user.trafficLimitGB * 1024 * 1024 * 1024 : 0;
   const expire = user.expireAt ? Math.floor(new Date(user.expireAt).getTime() / 1000) : 0;
