@@ -394,19 +394,6 @@ table.data-table{ width:100%; border-collapse:collapse; min-width:640px; }
 
 /* ============ Feature Tags ============ */
 .feature-tag{ display:inline-flex; align-items:center; gap:4px; font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(255,213,79,.1); color:var(--gold); margin-right:4px; }
-.feature-tag.vless{ background:rgba(255,213,79,.1); color:var(--gold); }
-.feature-tag.trojan{ background:rgba(79,157,247,.1); color:#4f9df7; }
-.feature-tag.ss{ background:rgba(61,220,151,.1); color:var(--success); }
-
-/* ============ Import CSV Modal ============ */
-.import-preview{ max-height:200px; overflow-y:auto; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:10px; margin:10px 0; font-size:11px; font-family:'JetBrains Mono',monospace; }
-.import-preview table{ width:100%; border-collapse:collapse; }
-.import-preview td,.import-preview th{ padding:4px 8px; border-bottom:1px solid var(--border); text-align:right; }
-
-/* ============ Live Connections ============ */
-.conn-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--border); font-size:12px; }
-.conn-item:first-child{ border-top:none; }
-.conn-dot{ width:8px; height:8px; border-radius:50%; background:var(--success); animation:pulse 2s infinite; flex-shrink:0; }
 
 /* ============ Topbar buttons ============ */
 .topbar-btn{ background:var(--card); border:1px solid var(--border); color:var(--text-2); width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:14px; transition:.2s; cursor:pointer; }
@@ -756,7 +743,6 @@ table.data-table{ width:100%; border-collapse:collapse; min-width:640px; }
                         <input class="input-box" id="clientSearch" data-i18n-placeholder="search_name" placeholder="جستجوی نام..." style="width:190px">
                         <button class="btn btn-ghost" id="exportAllBtn" title="خروجی JSON"><i class="fas fa-download"></i><span data-i18n="export_json">خروجی</span></button>
                         <button class="btn btn-ghost" id="exportCsvBtn" title="خروجی CSV"><i class="fas fa-file-csv"></i>CSV</button>
-                        <button class="btn btn-ghost" id="importCsvBtn" title="ورودی CSV"><i class="fas fa-file-import"></i><span data-i18n="import_csv">ورودی CSV</span></button>
                         <button class="btn btn-gold" id="addClientBtn"><i class="fas fa-plus"></i><span data-i18n="add_client">افزودن کاربر</span></button>
                     </div>
                 </div>
@@ -829,20 +815,6 @@ table.data-table{ width:100%; border-collapse:collapse; min-width:640px; }
                     <div class="card card-pad reveal">
                         <div class="card-head"><div><h3 data-i18n="top_users">پرمصرف‌ترین کاربران</h3><p data-i18n="top_users_sub">بر اساس حجم مصرفی</p></div></div>
                         <div id="topUsersList" style="display:flex;flex-direction:column;gap:14px;"></div>
-                    </div>
-                </div>
-
-                <!-- Feature 9: Live Connections -->
-                <div class="card card-pad reveal" style="animation-delay:.15s;margin-top:16px;">
-                    <div class="card-head">
-                        <div>
-                            <h3 data-i18n="live_connections">اتصالات فعال</h3>
-                            <p data-i18n="live_connections_sub">اتصالات در حال حاضر</p>
-                        </div>
-                        <button class="btn btn-ghost btn-sm" id="refreshConnectionsBtn"><i class="fas fa-rotate"></i> <span data-i18n="refresh">بروزرسانی</span></button>
-                    </div>
-                    <div id="activeConnectionsList">
-                        <div style="text-align:center;padding:20px;color:var(--text-3);font-size:12px;" data-i18n="loading">در حال بارگذاری...</div>
                     </div>
                 </div>
             </section>
@@ -963,76 +935,6 @@ table.data-table{ width:100%; border-collapse:collapse; min-width:640px; }
                             <button class="topbar-btn" id="themeToggleSettings" style="width:auto;padding:0 10px;height:30px;font-size:11px;gap:6px;" data-i18n="toggle_theme">تغییر</button>
                         </div>
                     </div>
-
-                    <!-- Feature 2: Subscription Format -->
-                    <div class="card card-pad reveal" style="animation-delay:.28s">
-                        <div class="card-head"><h3><i class="fas fa-rss" style="color:var(--gold);margin-left:8px"></i><span data-i18n="sub_format">قالب سابسکرایشن</span></h3></div>
-                        <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;">
-                            <i class="fas fa-info-circle" style="color:var(--gold);margin-left:4px;"></i>
-                            <span data-i18n="sub_format_info">قالب خروجی لینک سابسکرایشن</span>
-                        </div>
-                        <div class="field">
-                            <label data-i18n="output_format">فرمت خروجی</label>
-                            <select id="sSubFormat">
-                                <option value="base64">Base64 (پیش‌فرض)</option>
-                                <option value="clash">Clash/Mihomo YAML</option>
-                                <option value="singbox">sing-box JSON</option>
-                                <option value="raw">Raw (متن خام)</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Feature 3: Path Disguise -->
-                    <div class="card card-pad reveal" style="animation-delay:.31s">
-                        <div class="card-head"><h3><i class="fas fa-mask" style="color:var(--gold);margin-left:8px"></i><span data-i18n="path_disguise">مسیر مخفی</span></h3></div>
-                        <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;">
-                            <i class="fas fa-info-circle" style="color:var(--gold);margin-left:4px;"></i>
-                            <span data-i18n="path_disguise_info">مسیرهای جایگزین برای پنل و سابسکرایشن</span>
-                        </div>
-                        <div id="pathDisguisePaths">
-                            <div class="field"><label data-i18n="admin_path">مسیر پنل</label><input type="text" id="sPathAdmin" class="mono" dir="ltr" placeholder="/a3f8c1" readonly></div>
-                            <div class="field"><label data-i18n="sub_path">مسیر سابسکرایشن</label><input type="text" id="sPathSub" class="mono" dir="ltr" placeholder="/f7b2e1/..." readonly></div>
-                        </div>
-                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <button class="btn btn-gold btn-sm" id="pathDisguiseGenerate"><i class="fas fa-shuffle"></i> <span data-i18n="generate_paths">تولید مسیرها</span></button>
-                            <button class="btn btn-ghost btn-sm" id="pathDisguiseCopy"><i class="fas fa-copy"></i> <span data-i18n="copy_paths">کپی</span></button>
-                        </div>
-                    </div>
-
-                    <!-- Feature 10: ISP Profile -->
-                    <div class="card card-pad reveal" style="animation-delay:.34s">
-                        <div class="card-head"><h3><i class="fas fa-tower-broadcast" style="color:var(--gold);margin-left:8px"></i><span data-i18n="isp_profile">پروفایل اپراتور</span></h3></div>
-                        <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;">
-                            <i class="fas fa-info-circle" style="color:var(--gold);margin-left:4px;"></i>
-                            <span data-i18n="isp_profile_info">بهینه‌سازی خودکار بر اساس اپراتور اینترنت</span>
-                        </div>
-                        <div class="field">
-                            <label data-i18n="select_isp">انتخاب اپراتور</label>
-                            <select id="sIspProfile">
-                                <option value="default">Default (پیش‌فرض)</option>
-                                <option value="irancell">Irancell</option>
-                                <option value="mci">MCI (Hamrah-e-Aval)</option>
-                                <option value="rightel">Rightel</option>
-                            </select>
-                        </div>
-                        <div id="ispProfileInfo" style="font-size:11px;color:var(--text-3);padding:8px;background:var(--bg);border-radius:8px;border:1px solid var(--border);"></div>
-                    </div>
-
-                    <!-- Feature 7: Backup & Restore -->
-                    <div class="card card-pad reveal" style="animation-delay:.37s">
-                        <div class="card-head"><h3><i class="fas fa-database" style="color:var(--gold);margin-left:8px"></i><span data-i18n="backup_restore">نسخه پشتیبان و بازیابی</span></h3></div>
-                        <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;">
-                            <i class="fas fa-info-circle" style="color:var(--gold);margin-left:4px;"></i>
-                            <span data-i18n="backup_restore_info">تهیه و بازیابی نسخه پشتیبان از تمام کاربران و تنظیمات</span>
-                        </div>
-                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <button class="btn btn-gold btn-sm" id="backupBtn"><i class="fas fa-download"></i> <span data-i18n="backup">پشتیبان‌گیری</span></button>
-                            <label class="btn btn-ghost btn-sm" style="cursor:pointer;" id="restoreLabel">
-                                <i class="fas fa-upload"></i> <span data-i18n="restore">بازیابی</span>
-                                <input type="file" id="restoreFile" accept=".json" style="display:none;">
-                            </label>
-                        </div>
-                    </div>
                 </div>
 
                 <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
@@ -1062,40 +964,6 @@ table.data-table{ width:100%; border-collapse:collapse; min-width:640px; }
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div class="field"><label data-i18n="dl_speed">سرعت دانلود (MB/s) — صفر یعنی نامحدود</label><input type="number" id="mDlSpeed" placeholder="0"></div>
             <div class="field"><label data-i18n="ul_speed">سرعت آپلود (MB/s) — صفر یعنی نامحدود</label><input type="number" id="mUlSpeed" placeholder="0"></div>
-        </div>
-        <!-- Feature 1: Multi-protocol support -->
-        <div class="field">
-            <label data-i18n="protocols">پروتکل‌ها</label>
-            <div style="display:flex;gap:14px;align-items:center;padding:8px 0;">
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
-                    <input type="checkbox" id="mProtoVless" checked> <span style="color:var(--gold);">VLESS</span>
-                </label>
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
-                    <input type="checkbox" id="mProtoTrojan"> <span style="color:#4f9df7;">Trojan</span>
-                </label>
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
-                    <input type="checkbox" id="mProtoSs"> <span style="color:var(--success);">Shadowsocks</span>
-                </label>
-            </div>
-        </div>
-        <!-- Feature 6: Reset Schedule -->
-        <div class="field">
-            <label data-i18n="reset_schedule">برنامه بازنشانی ترافیک</label>
-            <select id="mResetSchedule">
-                <option value="none">هیچ‌کدام (غیرفعال)</option>
-                <option value="monthly">ماهانه</option>
-                <option value="weekly">هفتگی</option>
-            </select>
-        </div>
-        <!-- Feature 10: ISP per user -->
-        <div class="field">
-            <label data-i18n="user_isp">اپراتور کاربر</label>
-            <select id="mUserIsp">
-                <option value="default">پیش‌فرض</option>
-                <option value="irancell">Irancell</option>
-                <option value="mci">MCI</option>
-                <option value="rightel">Rightel</option>
-            </select>
         </div>
         <!-- Feature 10: IP whitelist/blacklist -->
         <div class="field"><label data-i18n="ip_whitelist">لیست سفید IP (هر ردیف یک IP)</label><textarea id="mIpWhitelist" style="min-height:50px;font-family:'JetBrains Mono',monospace;font-size:11px;" placeholder="1.2.3.4&#10;5.6.7.8"></textarea></div>
@@ -1131,28 +999,6 @@ table.data-table{ width:100%; border-collapse:collapse; min-width:640px; }
             <button class="modal-close" id="connLogClose"><i class="fas fa-xmark"></i></button>
         </div>
         <div id="connLogContent" style="max-height:300px;overflow-y:auto;"></div>
-    </div>
-</div>
-
-<!-- Feature 5: Import CSV Modal -->
-<div class="modal-overlay" id="importCsvModal">
-    <div class="modal" style="max-width:520px;">
-        <div class="modal-head">
-            <h3 data-i18n="import_csv_title">ورودی کاربران از CSV</h3>
-            <button class="modal-close" id="importCsvClose"><i class="fas fa-xmark"></i></button>
-        </div>
-        <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;">
-            <span data-i18n="csv_format_hint">فرمت: name,uuid,trafficGB,expireDays,protocol</span>
-            <br><span data-i18n="csv_format_note">اگر uuid خالی باشد، خودکار تولید می‌شود</span>
-        </div>
-        <div class="field">
-            <textarea id="importCsvText" style="min-height:120px;font-family:'JetBrains Mono',monospace;font-size:11px;direction:ltr;" placeholder="ali,abc-123,50,30,vless&#10;mehdi,,100,0,trojan&#10;reza,,,ss"></textarea>
-        </div>
-        <div id="importPreview" class="import-preview" style="display:none;"></div>
-        <div class="modal-foot">
-            <button class="btn btn-ghost" id="importCsvCancel" data-i18n="cancel">انصراف</button>
-            <button class="btn btn-gold" id="importCsvConfirm"><i class="fas fa-check"></i><span data-i18n="import_confirm">وارد کردن</span></button>
-        </div>
     </div>
 </div>
 
@@ -1242,27 +1088,11 @@ const i18nStrings = {
         daily_request_limit:'محدودیت روزانه ریکوئست — صفر یعنی نامحدود',
         expiry_date:'تاریخ انقضا', max_concurrent:'حداکثر اتصالات همزمان — صفر یعنی نامحدود',
         dl_speed:'سرعت دانلود (MB/s) — صفر یعنی نامحدود', ul_speed:'سرعت آپلود (MB/s) — صفر یعنی نامحدود',
-        protocols:'پروتکل‌ها', reset_schedule:'برنامه بازنشانی ترافیک',
-        user_isp:'اپراتور کاربر',
         ip_whitelist:'لیست سفید IP (هر ردیف یک IP)', ip_blacklist:'لیست سیاه IP (هر ردیف یک IP)',
         create_client:'ایجاد کاربر', qr_code:'کد QR', copy_link:'کپی لینک', download_image:'دانلود تصویر',
         connection_logs:'لاگ اتصالات', admin:'مدیر', admin_password:'رمز عبور مدیر', login:'ورود',
         loading:'در حال بارگذاری...', active_status:'فعال', no_users:'کاربری ثبت نشده',
         no_results:'کاربری با این مشخصات پیدا نشد.',
-        sub_format:'قالب سابسکرایشن', sub_format_info:'قالب خروجی لینک سابسکرایشن',
-        output_format:'فرمت خروجی',
-        path_disguise:'مسیر مخفی', path_disguise_info:'مسیرهای جایگزین برای پنل و سابسکرایشن',
-        admin_path:'مسیر پنل', sub_path:'مسیر سابسکرایشن',
-        generate_paths:'تولید مسیرها', copy_paths:'کپی',
-        isp_profile:'پروفایل اپراتور', isp_profile_info:'بهینه‌سازی خودکار بر اساس اپراتور اینترنت',
-        select_isp:'انتخاب اپراتور',
-        backup_restore:'نسخه پشتیبان و بازیابی', backup_restore_info:'تهیه و بازیابی نسخه پشتیبان از تمام کاربران و تنظیمات',
-        backup:'پشتیبان‌گیری', restore:'بازیابی',
-        live_connections:'اتصالات فعال', live_connections_sub:'اتصالات در حال حاضر',
-        import_csv:'ورودی CSV', import_csv_title:'ورودی کاربران از CSV',
-        csv_format_hint:'فرمت: name,uuid,trafficGB,expireDays,protocol',
-        csv_format_note:'اگر uuid خالی باشد، خودکار تولید می‌شود',
-        import_confirm:'وارد کردن',
     },
     en: {
         nav_dashboard:'Dashboard', nav_clients:'Clients', nav_alerts:'Alerts',
@@ -1313,27 +1143,11 @@ const i18nStrings = {
         daily_request_limit:'Daily Request Limit — 0 for unlimited',
         expiry_date:'Expiry Date', max_concurrent:'Max Concurrent Connections — 0 for unlimited',
         dl_speed:'Download Speed (MB/s) — 0 for unlimited', ul_speed:'Upload Speed (MB/s) — 0 for unlimited',
-        protocols:'Protocols', reset_schedule:'Traffic Reset Schedule',
-        user_isp:'User ISP',
         ip_whitelist:'IP Whitelist (one per line)', ip_blacklist:'IP Blacklist (one per line)',
         create_client:'Create Client', qr_code:'QR Code', copy_link:'Copy Link', download_image:'Download Image',
         connection_logs:'Connection Logs', admin:'Admin', admin_password:'Admin Password', login:'Login',
         loading:'Loading...', active_status:'Active', no_users:'No users registered',
         no_results:'No users found with these criteria.',
-        sub_format:'Subscription Format', sub_format_info:'Output format for subscription links',
-        output_format:'Output Format',
-        path_disguise:'Path Disguise', path_disguise_info:'Alternative paths for panel and subscription',
-        admin_path:'Admin Path', sub_path:'Subscription Path',
-        generate_paths:'Generate Paths', copy_paths:'Copy',
-        isp_profile:'ISP Profile', isp_profile_info:'Auto-optimization based on internet provider',
-        select_isp:'Select ISP',
-        backup_restore:'Backup & Restore', backup_restore_info:'Backup and restore all users and settings',
-        backup:'Backup', restore:'Restore',
-        live_connections:'Live Connections', live_connections_sub:'Current active connections',
-        import_csv:'Import CSV', import_csv_title:'Import Users from CSV',
-        csv_format_hint:'Format: name,uuid,trafficGB,expireDays,protocol',
-        csv_format_note:'If uuid is empty, it will be auto-generated',
-        import_confirm:'Import',
     },
 };
 
@@ -1593,17 +1407,9 @@ function clientRow(c, withActions=true){
 
     // Feature tags for new fields
     let featureTags = '';
-    // Protocol tags
-    const userProtos = c.protocols || ['vless'];
-    for (const p of userProtos) {
-        if (p === 'vless') featureTags += `<span class="feature-tag vless" title="VLESS"><i class="fas fa-bolt"></i>VLESS</span>`;
-        else if (p === 'trojan') featureTags += `<span class="feature-tag trojan" title="Trojan"><i class="fas fa-shield"></i>TROJAN</span>`;
-        else if (p === 'shadowsocks') featureTags += `<span class="feature-tag ss" title="Shadowsocks"><i class="fas fa-lock"></i>SS</span>`;
-    }
     if (c.maxConcurrent > 0) featureTags += `<span class="feature-tag" title="Max Concurrent"><i class="fas fa-link"></i>${toFa(c.maxConcurrent)}</span>`;
     if (c.downloadSpeedMBps > 0) featureTags += `<span class="feature-tag" title="DL Speed"><i class="fas fa-arrow-down"></i>${toFa(c.downloadSpeedMBps)}M</span>`;
     if (c.uploadSpeedMBps > 0) featureTags += `<span class="feature-tag" title="UL Speed"><i class="fas fa-arrow-up"></i>${toFa(c.uploadSpeedMBps)}M</span>`;
-    if (c.resetSchedule && c.resetSchedule !== 'none') featureTags += `<span class="feature-tag" title="Auto Reset"><i class="fas fa-rotate"></i>${c.resetSchedule === 'monthly' ? 'ماهانه' : 'هفتگی'}</span>`;
 
     return `<tr>
         <td><div class="client-cell">
@@ -1621,8 +1427,8 @@ function clientRow(c, withActions=true){
         ${withActions ? `<td><div class="row-actions">
             <button class="act-btn" title="${currentLang==='en'?'Edit':'ویرایش'}" data-uuid="${c.uuid}"><i class="fas fa-pen"></i></button>
             <button class="act-btn" title="${currentLang==='en'?'Copy Link':'کپی لینک'}" data-uuid="${c.uuid}"><i class="fas fa-link"></i></button>
-            <button class="act-btn" title="${currentLang==='en'?'Subscription':'سابسکرایشن'}" data-uuid="${c.uuid}" data-act="sub"><i class="fas fa-rss"></i></button>
             <button class="act-btn" title="QR" data-uuid="${c.uuid}" data-act="qr"><i class="fas fa-qrcode"></i></button>
+            <button class="act-btn" title="${currentLang==='en'?'Download':'دانلود'}" data-uuid="${c.uuid}" data-act="download"><i class="fas fa-download"></i></button>
             <button class="act-btn success" title="${currentLang==='en'?'Reset Traffic':'صفر کردن ترافیک'}" data-uuid="${c.uuid}" data-act="reset"><i class="fas fa-rotate-left"></i></button>
             <button class="act-btn warning" title="${currentLang==='en'?'Reset Requests':'صفر کردن ریکوئست'}" data-uuid="${c.uuid}" data-act="reset-req"><i class="fas fa-arrow-rotate-left"></i></button>
             <button class="act-btn" title="Logs" data-uuid="${c.uuid}" data-act="logs"><i class="fas fa-scroll"></i></button>
@@ -1678,13 +1484,6 @@ function applyClientFilters(){
             showToast(currentLang==='en'?'Link copied':'لینک اتصال کپی شد');
         });
     });
-    tbody.querySelectorAll('[data-act="sub"]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const c = clients.find(x => x.uuid === btn.dataset.uuid);
-            navigator.clipboard.writeText(subLink(c));
-            showToast(currentLang==='en'?'Subscription link copied':'لینک سابسکرایشن کپی شد');
-        });
-    });
     tbody.querySelectorAll('[data-act="qr"]').forEach(btn => {
         btn.addEventListener('click', () => showQR(btn.dataset.uuid));
     });
@@ -1694,7 +1493,6 @@ function applyClientFilters(){
     tbody.querySelectorAll('[data-act="reset"]').forEach(btn => {
         btn.addEventListener('click', () => resetTraffic(btn.dataset.uuid));
     });
-
     tbody.querySelectorAll('[data-act="reset-req"]').forEach(btn => {
         btn.addEventListener('click', () => resetUserRequests(btn.dataset.uuid));
     });
@@ -1772,10 +1570,9 @@ function downloadConfig(uuid){
     showToast(currentLang==='en'?'Config downloaded':'کانفیگ دانلود شد');
 }
 
-
 async function resetUserRequests(uuid){
     const c = clients.find(x => x.uuid === uuid);
-    const msg = currentLang==='en' ? `Reset request counter for "${c?.name || ''}"?` : `شمارنده ریکوئست کاربر «${c?.name || '' }» صفر شود؟`;
+    const msg = currentLang==='en' ? `Reset request counter for "${c?.name || ''}"?` : `شمارنده ریکوئست کاربر «${c?.name || ''}» صفر شود؟`;
     if(!confirm(msg)) return;
     try {
         const res = await fetch('/api/users/' + uuid + '/reset-requests', { method:'PUT' });
@@ -1791,6 +1588,7 @@ async function resetUserRequests(uuid){
     }
 }
 
+/* ---------- Feature 7: Connection Logs ---------- */
 async function showConnectionLogs(uuid) {
     const c = clients.find(x => x.uuid === uuid);
     if (!c) return;
@@ -1958,26 +1756,12 @@ function openModal(uuid){
         qs('#mMaxConcurrent').value = c.maxConcurrent || '';
         qs('#mDlSpeed').value = c.downloadSpeedMBps || '';
         qs('#mUlSpeed').value = c.uploadSpeedMBps || '';
-        // Feature 1: Protocols
-        const protos = c.protocols || ['vless'];
-        qs('#mProtoVless').checked = protos.includes('vless');
-        qs('#mProtoTrojan').checked = protos.includes('trojan');
-        qs('#mProtoSs').checked = protos.includes('shadowsocks');
-        // Feature 6: Reset schedule
-        qs('#mResetSchedule').value = c.resetSchedule || 'none';
-        // Feature 10: ISP
-        qs('#mUserIsp').value = c.isp || 'default';
         qs('#mIpWhitelist').value = (c.ipWhitelist || []).join('\n');
         qs('#mIpBlacklist').value = (c.ipBlacklist || []).join('\n');
         qs('#modalCreate').innerHTML = `<i class="fas fa-check"></i>${currentLang==='en'?'Save':'ذخیره'}`;
     } else {
         qs('#modalTitle').textContent = currentLang==='en'?'Add New Client':'افزودن کاربر جدید';
         ['mName','mLimit','mDailyLimit','mExpiry','mMaxConcurrent','mDlSpeed','mUlSpeed','mIpWhitelist','mIpBlacklist'].forEach(id => qs('#'+id).value = '');
-        qs('#mProtoVless').checked = true;
-        qs('#mProtoTrojan').checked = false;
-        qs('#mProtoSs').checked = false;
-        qs('#mResetSchedule').value = 'none';
-        qs('#mUserIsp').value = 'default';
         qs('#modalCreate').innerHTML = `<i class="fas fa-plus"></i>${currentLang==='en'?'Create Client':'ایجاد کاربر'}`;
     }
     clientModal.classList.add('open');
@@ -1998,28 +1782,18 @@ qs('#modalCreate').addEventListener('click', async () => {
     const uploadSpeedMBps = Number(qs('#mUlSpeed').value) || 0;
     const ipWhitelist = qs('#mIpWhitelist').value.split('\n').map(s=>s.trim()).filter(Boolean);
     const ipBlacklist = qs('#mIpBlacklist').value.split('\n').map(s=>s.trim()).filter(Boolean);
-    // Feature 1: Protocols
-    const protocols = [];
-    if(qs('#mProtoVless').checked) protocols.push('vless');
-    if(qs('#mProtoTrojan').checked) protocols.push('trojan');
-    if(qs('#mProtoSs').checked) protocols.push('shadowsocks');
-    if(protocols.length === 0) protocols.push('vless'); // at least vless
-    // Feature 6: Reset schedule
-    const resetSchedule = qs('#mResetSchedule').value || 'none';
-    // Feature 10: ISP
-    const isp = qs('#mUserIsp').value || 'default';
 
     try {
         if(editingUuid){
             await fetch('/api/users/' + editingUuid, {
                 method:'PUT', headers:{'content-type':'application/json'},
-                body: JSON.stringify({ name, trafficLimitGB, dailyRequestLimit, expireAt, maxConcurrent, downloadSpeedMBps, uploadSpeedMBps, ipWhitelist, ipBlacklist, protocols, resetSchedule, isp })
+                body: JSON.stringify({ name, trafficLimitGB, dailyRequestLimit, expireAt, maxConcurrent, downloadSpeedMBps, uploadSpeedMBps, ipWhitelist, ipBlacklist })
             });
             showToast(currentLang==='en'?`Client "${name}" updated`:`کاربر «${name}» ویرایش شد`);
         } else {
             await fetch('/api/users', {
                 method:'POST', headers:{'content-type':'application/json'},
-                body: JSON.stringify({ name, trafficLimitGB, dailyRequestLimit, expireAt, maxConcurrent, downloadSpeedMBps, uploadSpeedMBps, ipWhitelist, ipBlacklist, protocols, resetSchedule, isp })
+                body: JSON.stringify({ name, trafficLimitGB, dailyRequestLimit, expireAt, maxConcurrent, downloadSpeedMBps, uploadSpeedMBps, ipWhitelist, ipBlacklist })
             });
             showToast(currentLang==='en'?`Client "${name}" created`:`کاربر «${name}» ایجاد شد`);
         }
@@ -2122,17 +1896,17 @@ function drawLineChart(data){
 /* ---------- Charts: donut ---------- */
 const protocols = [
     {name:'VLESS', color:'#FFD54F'},
+    {name:'VMESS', color:'#3ddc97'},
     {name:'TROJAN', color:'#4f9df7'},
-    {name:'SHADOWSOCKS', color:'#3ddc97'},
     {name:'OTHER', color:'#8f8f8f'},
 ];
 function drawDonut(){
     const svg = qs('#donutChart');
     const legend = qs('#donutLegend');
     if(!svg) return;
-    const breakdown = (realStats && realStats.protocolBreakdown) || { VLESS: 0, TROJAN: 0, SHADOWSOCKS: 0, OTHER: 0 };
+    const breakdown = (realStats && realStats.protocolBreakdown) || { VLESS: 100, VMESS: 0, TROJAN: 0, OTHER: 0 };
     const totalUsersCount = (realStats && realStats.totalUsers) ?? clients.length;
-    const values = [breakdown.VLESS || 0, breakdown.TROJAN || 0, breakdown.SHADOWSOCKS || 0, breakdown.OTHER || 0];
+    const values = [breakdown.VLESS, breakdown.VMESS, breakdown.TROJAN, breakdown.OTHER];
     const total = values.reduce((a,b)=>a+b,0) || 1;
     const cx=100, cy=100, r=72, sw=22;
     const circumference = 2*Math.PI*r;
@@ -2506,198 +2280,6 @@ async function loadSubTemplate(){
     } catch(e) {}
 }
 
-/* ---------- Feature 5: Import CSV ---------- */
-qs('#importCsvBtn').addEventListener('click', () => {
-    qs('#importCsvText').value = '';
-    qs('#importPreview').style.display = 'none';
-    qs('#importCsvModal').classList.add('open');
-});
-qs('#importCsvClose').addEventListener('click', () => qs('#importCsvModal').classList.remove('open'));
-qs('#importCsvCancel').addEventListener('click', () => qs('#importCsvModal').classList.remove('open'));
-qs('#importCsvModal').addEventListener('click', (e) => { if(e.target === qs('#importCsvModal')) qs('#importCsvModal').classList.remove('open'); });
-
-// Preview on input
-qs('#importCsvText').addEventListener('input', () => {
-    const text = qs('#importCsvText').value.trim();
-    if(!text) { qs('#importPreview').style.display = 'none'; return; }
-    const lines = text.split('\n').filter(l => l.trim() && !l.trim().toLowerCase().startsWith('name'));
-    let html = '<table><tr><th>نام</th><th>UUID</th><th>حجم (GB)</th><th>روز</th><th>پروتکل</th></tr>';
-    for(const line of lines) {
-        const p = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
-        html += '<tr><td>' + (p[0]||'?') + '</td><td style="font-size:9px;color:var(--text-3)">' + (p[1]||'خودکار') + '</td><td>' + (p[2]||'0') + '</td><td>' + (p[3]||'∞') + '</td><td>' + (p[4]||'vless') + '</td></tr>';
-    }
-    html += '</table>';
-    qs('#importPreview').innerHTML = html;
-    qs('#importPreview').style.display = '';
-});
-
-qs('#importCsvConfirm').addEventListener('click', async () => {
-    const csv = qs('#importCsvText').value.trim();
-    if(!csv) { showToast(currentLang==='en'?'No CSV data':'داده‌ای وارد نشده', 'warning'); return; }
-    try {
-        const res = await fetch('/api/import', {
-            method: 'POST', headers: {'content-type':'application/json'},
-            body: JSON.stringify({ csv })
-        });
-        const data = await res.json();
-        if(data.ok){
-            showToast(currentLang==='en'?`${data.count} users imported`:`${data.count} کاربر وارد شد`);
-            qs('#importCsvModal').classList.remove('open');
-            await renderClients();
-        } else {
-            showToast(data.message || 'Error', 'error');
-        }
-    } catch(e) {
-        showToast(currentLang==='en'?'Import error':'خطا در وارد کردن', 'error');
-    }
-});
-
-/* ---------- Feature 7: Backup & Restore ---------- */
-qs('#backupBtn').addEventListener('click', async () => {
-    try {
-        const res = await fetch('/api/backup', { method: 'POST' });
-        if(res.status === 401){ showLogin(); return; }
-        const text = await res.text();
-        const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'hadi-panel-backup.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        showToast(currentLang==='en'?'Backup downloaded':'نسخه پشتیبان دانلود شد');
-    } catch(e) {
-        showToast(currentLang==='en'?'Backup error':'خطا در پشتیبان‌گیری', 'error');
-    }
-});
-
-qs('#restoreFile').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const msg = currentLang==='en'?'Are you sure you want to restore? All current users will be replaced!':'آیا از بازیابی اطمینان دارید؟ تمام کاربران فعلی جایگزین می‌شوند!';
-    if(!confirm(msg)) { e.target.value = ''; return; }
-    try {
-        const text = await file.text();
-        const backup = JSON.parse(text);
-        const res = await fetch('/api/restore', {
-            method: 'POST', headers: {'content-type':'application/json'},
-            body: JSON.stringify(backup)
-        });
-        const data = await res.json();
-        if(data.ok){
-            showToast(currentLang==='en'?`${data.count} users restored`:`${data.count} کاربر بازیابی شد`);
-            await renderClients();
-        } else {
-            showToast(data.message || 'Error', 'error');
-        }
-    } catch(err) {
-        showToast(currentLang==='en'?'Restore error':'خطا در بازیابی', 'error');
-    }
-    e.target.value = '';
-});
-
-/* ---------- Feature 3: Path Disguise ---------- */
-async function loadPathDisguise(){
-    try {
-        const res = await fetch('/api/config/path-disguise');
-        const data = await res.json();
-        if(data.ok && data.paths){
-            qs('#sPathAdmin').value = data.paths.admin || '';
-            qs('#sPathSub').value = data.paths.sub || '';
-        }
-    } catch(e) {}
-}
-qs('#pathDisguiseGenerate').addEventListener('click', async () => {
-    try {
-        const res = await fetch('/api/config/path-disguise', {
-            method: 'POST', headers: {'content-type':'application/json'},
-            body: JSON.stringify({})
-        });
-        const data = await res.json();
-        if(data.ok){
-            qs('#sPathAdmin').value = data.paths.admin || '';
-            qs('#sPathSub').value = data.paths.sub || '';
-            showToast(currentLang==='en'?'Paths generated':'مسیرها تولید شد');
-        }
-    } catch(e) {
-        showToast('Error', 'error');
-    }
-});
-qs('#pathDisguiseCopy').addEventListener('click', () => {
-    const admin = qs('#sPathAdmin').value;
-    const sub = qs('#sPathSub').value;
-    const text = `Admin: ${location.origin}${admin}\nSub: ${location.origin}${sub}`;
-    navigator.clipboard.writeText(text);
-    showToast(currentLang==='en'?'Paths copied':'مسیرها کپی شد');
-});
-
-/* ---------- Feature 10: ISP Profile ---------- */
-async function loadIspProfile(){
-    try {
-        const res = await fetch('/api/config/isp');
-        const data = await res.json();
-        if(data.ok){
-            qs('#sIspProfile').value = data.selected || 'default';
-            updateIspInfo(data.selected || 'default');
-        }
-    } catch(e) {}
-}
-function updateIspInfo(isp){
-    const info = {
-        default: { fp: 'random', fragment: false, name: 'Default' },
-        irancell: { fp: 'chrome', fragment: true, name: 'Irancell' },
-        mci: { fp: 'firefox', fragment: false, name: 'MCI' },
-        rightel: { fp: 'safari', fragment: true, name: 'Rightel' },
-    };
-    const p = info[isp] || info.default;
-    qs('#ispProfileInfo').innerHTML = `<span style="color:var(--gold);">${p.name}</span> — Fingerprint: <span style="color:var(--text)">${p.fp}</span>, TLS Fragment: <span style="color:${p.fragment?'var(--success)':'var(--text-3)'}">${p.fragment ? 'فعال' : 'غیرفعال'}</span>`;
-}
-qs('#sIspProfile').addEventListener('change', async (e) => {
-    const isp = e.target.value;
-    try {
-        await fetch('/api/config/isp', {
-            method: 'PUT', headers: {'content-type':'application/json'},
-            body: JSON.stringify({ isp })
-        });
-        updateIspInfo(isp);
-        showToast(currentLang==='en'?'ISP profile updated':'پروفایل اپراتور به‌روزرسانی شد');
-    } catch(e) {
-        showToast('Error', 'error');
-    }
-});
-
-/* ---------- Feature 9: Live Connections ---------- */
-async function fetchActiveConnections(){
-    try {
-        const res = await fetch('/api/connections/active');
-        if(res.status === 401) return;
-        const data = await res.json();
-        if(data.ok){
-            const el = qs('#activeConnectionsList');
-            if(!el) return;
-            if(data.connections.length === 0){
-                el.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-3);font-size:12px;">${currentLang==='en'?'No active connections':'اتصال فعالی وجود ندارد'}</div>`;
-            } else {
-                el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                    <span style="font-size:12px;color:var(--text-2)">${currentLang==='en'?'Total':'مجموع'}: <span class="mono" style="color:var(--gold)">${toFa(data.total)}</span></span>
-                </div>` + data.connections.map(c => `
-                    <div class="conn-item">
-                        <div class="conn-dot"></div>
-                        <div style="flex:1;">
-                            <div style="font-weight:600;">${c.name}</div>
-                            <div style="font-size:10px;color:var(--text-3);font-family:'JetBrains Mono',monospace;">${c.uuid.slice(0,8)}...</div>
-                        </div>
-                        <div class="feature-tag" style="font-size:11px;padding:4px 10px;">${toFa(c.activeCount)} ${currentLang==='en'?'conn':'اتصال'}</div>
-                    </div>
-                `).join('');
-            }
-        }
-    } catch(e) {}
-}
-qs('#refreshConnectionsBtn').addEventListener('click', fetchActiveConnections);
-
 /* ---------- Settings ---------- */
 qs('#saveSettingsBtn').addEventListener('click', () => {
     const newPass = qs('#sNewPassword').value;
@@ -2828,10 +2410,6 @@ async function initApp(){
     qs('#sDomain').value = location.hostname;
     await check2FAStatus();
     await loadSubTemplate();
-    // New features
-    await loadPathDisguise();
-    await loadIspProfile();
-    await fetchActiveConnections();
 
     if(refreshInterval) clearInterval(refreshInterval);
     refreshInterval = setInterval(() => {
@@ -2839,7 +2417,7 @@ async function initApp(){
         if(activeView){
             if(activeView.id === 'view-dashboard') refreshDashboard();
             if(activeView.id === 'view-clients') renderClients();
-            if(activeView.id === 'view-statistics') { refreshStatistics(); fetchActiveConnections(); }
+            if(activeView.id === 'view-statistics') refreshStatistics();
             if(activeView.id === 'view-alerts') renderAlerts();
         }
     }, 60000);
@@ -2909,11 +2487,7 @@ async function doLogin(){
                 return;
             }
             showApp();
-        } else {
-            // Feature 4: Show brute-force feedback
-            qs('#authError').textContent = data.message || (currentLang==='en'?'Wrong password':'رمز عبور اشتباه است');
-            if(res.status === 429) qs('#authError').style.color = 'var(--danger)';
-        }
+        } else { qs('#authError').textContent = data.message || (currentLang==='en'?'Wrong password':'رمز عبور اشتباه است'); }
     } catch(e){ qs('#authError').textContent = currentLang==='en'?'Connection error':'خطا در اتصال به سرور'; }
 }
 qs('#authLoginBtn').addEventListener('click', doLogin);
