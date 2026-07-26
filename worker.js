@@ -375,6 +375,107 @@ async function sendTelegramAlert(env, message) {
   }
 }
 
+// ---------- Telegram Bot — Webhook Handler ----------
+async function setupTelegramWebhook(env) {
+  if (!env.BOT_TOKEN) return;
+  try {
+    const webhookUrl = `https://${env.WORKER_NAME === 'hah' ? 'hah' : env.WORKER_NAME}.workers.dev/tg-webhook`;
+    // Try to use custom domain if available
+    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/setWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: webhookUrl, allowed_updates: ['message'] }),
+    });
+  } catch(e) {
+    console.error('Telegram webhook setup error:', e);
+  }
+}
+
+async function handleTelegramWebhook(request, env) {
+  if (request.method !== 'POST') return new Response('OK');
+  try {
+    const update = await request.json();
+    const msg = update.message;
+    if (!msg || !msg.text) return new Response('OK');
+
+    const chatId = msg.chat.id;
+    const text = msg.text.trim();
+    const userId = msg.from?.id;
+
+    // Only respond to the configured chat ID
+    if (env.BOT_CHAT_ID && String(chatId) !== String(env.BOT_CHAT_ID)) {
+      return new Response('OK');
+    }
+
+    let reply = '';
+
+    if (text === '/start' || text === '/help') {
+      reply = `🛡️ <b>Hadi Panel Bot</b>\n\n` +
+        `به ربات مدیریت پنل خوش آمدید!\n\n` +
+        `📌 دستورات موجود:\n` +
+        `/status — وضعیت سرور\n` +
+        `/users — لیست کاربران\n` +
+        `/traffic — مصرف امروز\n` +
+        `/requests — آمار ریکوئست\n` +
+        `/help — راهنما`;
+    } else if (text === '/status') {
+      const users = await listUsers(env);
+      const active = users.filter(u => isUserAllowed(u).ok).length;
+      const daily = await getDailyStats(env);
+      const trafficMB = (daily.todayBytes / (1024 * 1024)).toFixed(1);
+      reply = `📊 <b>وضعیت سرور</b>\n\n` +
+        `🟢 وضعیت: <b>فعال</b>\n` +
+        `👥 کل کاربران: <b>${users.length}</b>\n` +
+        `✅ کاربر فعال: <b>${active}</b>\n` +
+        `📈 مصرف امروز: <b>${trafficMB} MB</b>`;
+    } else if (text === '/users') {
+      const users = await listUsers(env);
+      const active = users.filter(u => isUserAllowed(u).ok);
+      const expired = users.filter(u => !isUserAllowed(u).ok);
+      let list = active.slice(0, 10).map((u, i) => {
+        const gb = (u.trafficUsedBytes || 0) / (1024 * 1024 * 1024);
+        const limit = u.trafficLimitGB > 0 ? `${u.trafficLimitGB} GB` : '∞';
+        return `${i + 1}. <b>${u.name}</b> — ${gb.toFixed(1)} GB / ${limit}`;
+      }).join('\n');
+      if (active.length > 10) list += `\n... و ${active.length - 10} کاربر دیگر`;
+      reply = `👥 <b>کاربران فعال (${active.length})</b>\n\n${list || 'هیچ کاربر فعالی نیست'}`;
+      if (expired.length > 0) reply += `\n\n❌ منقضی/غیرفعال: ${expired.length} نفر`;
+    } else if (text === '/traffic') {
+      const daily = await getDailyStats(env);
+      const lines = daily.last7.map(d => {
+        const mb = (d.bytes / (1024 * 1024)).toFixed(1);
+        const bar = '█'.repeat(Math.min(20, Math.round(d.bytes / (daily.todayBytes || 1) * 20)));
+        return `${d.date.slice(5)}: ${bar} ${mb} MB`;
+      }).join('\n');
+      const todayMB = (daily.todayBytes / (1024 * 1024)).toFixed(1);
+      reply = `📈 <b>مصرف ترافیک (۷ روز)</b>\n\n${lines}\n\n📍 امروز: <b>${todayMB} MB</b>`;
+    } else if (text === '/requests') {
+      const stats = await getWorkerStats(env);
+      if (stats.available) {
+        reply = `📊 <b>آمار ریکوئست</b>\n\n` +
+          `🔢 ریکوئست‌های امروز: <b>${stats.requestsToday.toLocaleString()}</b>\n` +
+          `📏 سقف روزانه: <b>${stats.dailyLimit.toLocaleString()}</b>`;
+      } else {
+        reply = `⚠️ آمار ریکوئست در دسترس نیست\n${stats.reason || ''}`;
+      }
+    } else {
+      reply = `❓ دستور نامعتبر\nبرای راهنما /help بزنید`;
+    }
+
+    // Send reply
+    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: reply, parse_mode: 'HTML' }),
+    });
+
+    return new Response('OK');
+  } catch(e) {
+    console.error('Telegram webhook error:', e);
+    return new Response('OK');
+  }
+}
+
 async function sendTelegramMessage(env, text) {
   if (!env.BOT_TOKEN || !env.BOT_CHAT_ID) {
     return { ok: false, message: 'BOT_TOKEN یا BOT_CHAT_ID تنظیم نشده' };
@@ -1429,6 +1530,30 @@ async function handleApi(request, env, url) {
     }
   }
 
+  // ---- Telegram: Setup Webhook ----
+  if (path === '/api/tg/setup-webhook' && request.method === 'POST') {
+    try {
+      if (!env.BOT_TOKEN) {
+        return errorResponse('BOT_TOKEN تنظیم نشده', 400);
+      }
+      // Get the hostname from the request URL
+      const hostName = url.hostname;
+      const webhookUrl = `https://${hostName}/tg-webhook`;
+      const res = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/setWebhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: webhookUrl, allowed_updates: ['message'] }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        return jsonResponse({ ok: true, message: `وب‌هوک با موفقیت تنظیم شد:\n${webhookUrl}` });
+      }
+      return errorResponse(`خطا: ${data.description || 'ناشناخته'}`, 400);
+    } catch(e) {
+      return errorResponse('خطا در تنظیم وب‌هوک', 500);
+    }
+  }
+
   // ---- Feature 6: Webhook test ----
   if (path === '/api/webhook/test' && request.method === 'POST') {
     try {
@@ -1556,109 +1681,122 @@ function subInfoPage(user, subUrl, configLink, statusInfo, dailyUsed) {
   const used = user.trafficUsedBytes || 0;
   const limitBytes = user.trafficLimitGB > 0 ? user.trafficLimitGB * 1024 * 1024 * 1024 : 0;
   const pct = limitBytes > 0 ? Math.min(100, Math.round((used / limitBytes) * 100)) : 0;
-  const expireText = user.expireAt
-    ? new Date(user.expireAt).toLocaleDateString('fa-IR')
-    : 'نامحدود';
-  const daysLeft = user.expireAt
-    ? Math.ceil((new Date(user.expireAt).getTime() - Date.now()) / 86400000)
-    : null;
+  const expireText = user.expireAt ? new Date(user.expireAt).toLocaleDateString('fa-IR') : 'نامحدود';
+  const daysLeft = user.expireAt ? Math.ceil((new Date(user.expireAt).getTime() - Date.now()) / 86400000) : null;
   dailyUsed = dailyUsed || 0;
   const dailyLimit = user.dailyRequestLimit || 0;
   const dailyPct = dailyLimit > 0 ? Math.min(100, Math.round((dailyUsed / dailyLimit) * 100)) : 0;
-  const statusColor = statusInfo.ok ? '#3ddc97' : '#e25858';
+  const statusColor = statusInfo.ok ? '#34d399' : '#f87171';
   const statusText = statusInfo.ok ? 'فعال' : statusInfo.reason;
+  const remaining = limitBytes > 0 ? fmtBytesFa(Math.max(0, limitBytes - used)) : 'نامحدود';
 
   return `<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>${user.name} — اطلاعات اشتراک</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
-  * { box-sizing: border-box; }
-  body { font-family: Tahoma, Vazir, sans-serif; background:#0a0a0a; color:#e9e9e9; margin:0; padding:20px 14px; min-height:100vh; }
-  .wrap { max-width: 420px; margin: 0 auto; }
-  .card { background:#181818; border:1px solid #2d2d2d; border-radius:16px; padding:20px; margin-bottom:14px; }
-  .top { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
-  .avatar { width:46px; height:46px; border-radius:50%; background:linear-gradient(135deg,#FFD54F,#e0b13a); display:flex; align-items:center; justify-content:center; font-weight:800; color:#0a0a0a; font-size:16px; }
-  .name { font-weight:700; font-size:16px; }
-  .badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; font-size:12px; margin-top:4px; }
-  .dot { width:7px; height:7px; border-radius:50%; background:${statusColor}; }
-  .row { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262626; font-size:13px; }
-  .row:last-child { border-bottom:none; }
-  .row .l { color:#9a9a9a; }
-  .row .v { font-family:'JetBrains Mono',monospace; font-weight:600; }
-  .bar { height:8px; border-radius:99px; background:#262626; overflow:hidden; margin-top:10px; }
-  .bar span { display:block; height:100%; background:${pct>=90?'#e25858':'#FFD54F'}; width:${pct}%; }
-  .barlabel { display:flex; justify-content:space-between; font-size:11px; color:#9a9a9a; margin-top:6px; }
-  h3 { font-size:13px; color:#9a9a9a; margin:0 0 10px; font-weight:600; }
-  .linkbox { display:flex; gap:8px; align-items:center; background:#101010; border:1px solid #2d2d2d; border-radius:10px; padding:10px 12px; }
-  .linkbox input { flex:1; background:transparent; border:none; color:#e9e9e9; font-family:monospace; font-size:11px; direction:ltr; text-align:left; outline:none; }
-  .copybtn { background:#FFD54F; color:#0a0a0a; border:none; border-radius:8px; padding:8px 12px; font-weight:700; font-size:12px; cursor:pointer; white-space:nowrap; }
-  .foot { text-align:center; color:#666; font-size:11px; margin-top:6px; }
-  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:#FFD54F; color:#0a0a0a; padding:9px 18px; border-radius:999px; font-size:13px; font-weight:700; opacity:0; transition:.25s; }
-  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+:root{--bg:#000;--bg-card:rgba(28,28,30,.8);--border:rgba(255,255,255,.08);--border-active:rgba(255,255,255,.15);--text:#f5f5f7;--text-sec:rgba(255,255,255,.6);--text-ter:rgba(255,255,255,.35);--accent:#F6821F;--accent-glow:rgba(246,130,31,.3);--success:#34d399;--danger:#f87171;--warning:#fbbf24;--glass:rgba(255,255,255,.03);--r:20px;--rs:14px;--rx:10px}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+.amb{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse 80% 50% at 50% -20%,rgba(246,130,31,.12),transparent),radial-gradient(ellipse 60% 40% at 80% 50%,rgba(246,130,31,.06),transparent),radial-gradient(ellipse 50% 30% at 20% 80%,rgba(52,211,153,.04),transparent)}
+.amb::after{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse 70% 50% at 50% 0%,black,transparent 70%)}
+.ctn{position:relative;z-index:1;max-width:440px;margin:0 auto;padding:24px 20px 40px;min-height:100vh;display:flex;flex-direction:column;gap:16px}
+.hdr{text-align:center;padding:32px 0 8px;animation:fu .6s cubic-bezier(.16,1,.3,1) both}
+.hdr .logo{width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,var(--accent),#e06816);display:inline-flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;box-shadow:0 8px 32px rgba(246,130,31,.3);margin-bottom:16px}
+.hdr h1{font-size:22px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px}
+.hdr .sub{font-size:13px;color:var(--text-sec);font-weight:400}
+.sbadge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 10px;background:${statusInfo.ok?'rgba(52,211,153,.12)':'rgba(248,113,113,.12)'};border:1px solid ${statusInfo.ok?'rgba(52,211,153,.2)':'rgba(248,113,113,.2)'};border-radius:999px;font-size:12px;font-weight:600;color:${statusColor};margin-top:12px}
+.sdot{width:8px;height:8px;border-radius:50%;background:${statusColor};animation:pls 2s ease-in-out infinite}
+.cd{background:var(--bg-card);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid var(--border);border-radius:var(--r);padding:22px;animation:fu .6s cubic-bezier(.16,1,.3,1) both}
+.cd:nth-child(2){animation-delay:.05s}.cd:nth-child(3){animation-delay:.1s}.cd:nth-child(4){animation-delay:.15s}.cd:nth-child(5){animation-delay:.2s}.cd:nth-child(6){animation-delay:.25s}
+.ct{font-size:12px;font-weight:600;color:var(--text-sec);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.ct i{font-size:14px;color:var(--accent)}
+.rsec{display:flex;align-items:center;gap:24px}
+.rbox{position:relative;width:100px;height:100px;flex-shrink:0}
+.rbox svg{width:100%;height:100%;transform:rotate(-90deg)}
+.rbg{fill:none;stroke:rgba(255,255,255,.06);stroke-width:8}
+.rfill{fill:none;stroke-width:8;stroke-linecap:round;stroke:${pct>=90?'var(--danger)':pct>=70?'var(--warning)':'var(--accent)'};stroke-dasharray:264;stroke-dashoffset:${264-(264*pct/100)};transition:stroke-dashoffset 1s cubic-bezier(.16,1,.3,1)}
+.rval{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.rnum{font-size:22px;font-weight:800;letter-spacing:-.5px}
+.rlbl{font-size:10px;color:var(--text-ter);margin-top:-2px}
+.rdet{flex:1}
+.drow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.drow:last-child{border-bottom:none}
+.dlbl{color:var(--text-sec)}
+.dval{font-weight:600;font-variant-numeric:tabular-nums}
+.sgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sitem{background:var(--glass);border:1px solid var(--border);border-radius:var(--rs);padding:16px;text-align:center;transition:border-color .2s}
+.sitem:hover{border-color:var(--border-active)}
+.sicon{width:36px;height:36px;border-radius:10px;background:rgba(246,130,31,.1);display:inline-flex;align-items:center;justify-content:center;font-size:14px;color:var(--accent);margin-bottom:10px}
+.sval{font-size:18px;font-weight:700;letter-spacing:-.3px;margin-bottom:2px}
+.slbl{font-size:11px;color:var(--text-ter)}
+.lsec{display:flex;flex-direction:column;gap:10px}
+.litem{background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);padding:12px 14px;display:flex;align-items:center;gap:10px;transition:border-color .2s}
+.litem:hover{border-color:var(--border-active)}
+.licon{width:32px;height:32px;border-radius:8px;background:rgba(246,130,31,.1);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--accent);flex-shrink:0}
+.linp{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--text);font-family:'SF Mono','JetBrains Mono',monospace;font-size:11px;direction:ltr;text-align:left}
+.cbtn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .2s;font-family:inherit}
+.cbtn:hover{transform:scale(1.02);box-shadow:0 4px 16px var(--accent-glow)}
+.cbtn:active{transform:scale(.98)}
+.cbtn.copied{background:var(--success)}
+.ft{text-align:center;padding:16px 0;font-size:11px;color:var(--text-ter)}
+.ftb{display:inline-flex;align-items:center;gap:6px;color:var(--text-sec);font-weight:500}
+.ftb .dt{color:var(--accent)}
+.toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(20px);background:rgba(28,28,30,.95);backdrop-filter:blur(20px);border:1px solid var(--border-active);color:var(--text);padding:12px 20px;border-radius:999px;font-size:13px;font-weight:600;z-index:200;display:flex;align-items:center;gap:8px;opacity:0;pointer-events:none;transition:all .3s cubic-bezier(.16,1,.3,1);box-shadow:0 16px 48px rgba(0,0,0,.4)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast i{color:var(--success)}
+@keyframes fu{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pls{0%,100%{opacity:1}50%{opacity:.4}}
+@media(max-width:380px){.ctn{padding:16px 14px 32px}.cd{padding:18px}.rsec{flex-direction:column;align-items:stretch}.rbox{margin:0 auto}}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <div class="top">
-      <div class="avatar">${(user.name||'ک').trim()[0] || 'ک'}</div>
-      <div>
-        <div class="name">${user.name}</div>
-        <span class="badge" style="background:${statusColor}22;color:${statusColor}"><span class="dot"></span>${statusText}</span>
+<div class="amb"></div>
+<div class="ctn">
+  <div class="hdr">
+    <div class="logo">H</div>
+    <h1>${user.name}</h1>
+    <div class="sub">اطلاعات اشتراک VPN</div>
+    <div class="sbadge"><span class="sdot"></span>${statusText}</div>
+  </div>
+  <div class="cd">
+    <div class="ct"><i class="fas fa-chart-pie"></i>مصرف ترافیک</div>
+    <div class="rsec">
+      <div class="rbox">
+        <svg viewBox="0 0 100 100"><circle class="rbg" cx="50" cy="50" r="42"/><circle class="rfill" cx="50" cy="50" r="42"/></svg>
+        <div class="rval"><div class="rnum">${pct}%</div><div class="rlbl">مصرف</div></div>
+      </div>
+      <div class="rdet">
+        <div class="drow"><span class="dlbl">مصرف‌شده</span><span class="dval">${fmtBytesFa(used)}</span></div>
+        <div class="drow"><span class="dlbl">سقف مجاز</span><span class="dval">${limitBytes > 0 ? fmtBytesFa(limitBytes) : '∞ نامحدود'}</span></div>
+        ${limitBytes > 0 ? `<div class="drow"><span class="dlbl">باقی‌مانده</span><span class="dval" style="color:${pct >= 90 ? 'var(--danger)' : 'var(--success)'}">${remaining}</span></div>` : ''}
       </div>
     </div>
   </div>
-
-  <div class="card">
-    <h3>مصرف ترافیک</h3>
-    <div class="row"><span class="l">مصرف‌شده</span><span class="v">${fmtBytesFa(used)}</span></div>
-    <div class="row"><span class="l">سقف مجاز</span><span class="v">${limitBytes > 0 ? fmtBytesFa(limitBytes) : 'نامحدود'}</span></div>
-    ${limitBytes > 0 ? `<div class="bar"><span></span></div><div class="barlabel"><span>${pct}٪ مصرف‌شده</span><span>${fmtBytesFa(Math.max(0,limitBytes-used))} باقی‌مانده</span></div>` : ''}
+  <div class="sgrid">
+    <div class="sitem"><div class="sicon"><i class="fas fa-clock"></i></div><div class="sval">${expireText}</div><div class="slbl">تاریخ انقضا</div></div>
+    <div class="sitem"><div class="sicon" style="background:rgba(52,211,153,.1);color:var(--success)"><i class="fas fa-fire"></i></div><div class="sval">${dailyUsed.toLocaleString('fa-IR')}</div><div class="slbl">ریکوئست امروز</div></div>
+    ${daysLeft !== null ? `<div class="sitem"><div class="sicon" style="background:${daysLeft < 3 ? 'rgba(248,113,113,.1)' : 'rgba(246,130,31,.1)'};color:${daysLeft < 3 ? 'var(--danger)' : 'var(--accent)'}"><i class="fas fa-hourglass-half"></i></div><div class="sval" style="color:${daysLeft < 0 ? 'var(--danger)' : daysLeft <= 3 ? 'var(--warning)' : 'var(--text)'}">${daysLeft >= 0 ? daysLeft + ' روز' : 'منقضی'}</div><div class="slbl">${daysLeft >= 0 ? 'باقی‌مانده' : 'منقضی شده'}</div></div>` : ''}
+    ${dailyLimit > 0 ? `<div class="sitem"><div class="sicon"><i class="fas fa-bolt"></i></div><div class="sval">${dailyPct}%</div><div class="slbl">سقف ریکوئست</div></div>` : '<div class="sitem"><div class="sicon"><i class="fas fa-infinity"></i></div><div class="sval">∞</div><div class="slbl">ریکوئست نامحدود</div></div>'}
   </div>
-
-  <div class="card">
-    <h3>اعتبار زمانی</h3>
-    <div class="row"><span class="l">تاریخ انقضا</span><span class="v">${expireText}</span></div>
-    ${daysLeft !== null ? `<div class="row"><span class="l">${daysLeft >= 0 ? 'روزهای باقی‌مانده' : 'منقضی شده'}</span><span class="v" style="color:${daysLeft < 0 ? '#e25858' : (daysLeft <= 3 ? '#FFD54F' : '#e9e9e9')}\\\">${daysLeft >= 0 ? daysLeft + ' روز' : Math.abs(daysLeft) + ' روز پیش'}</span></div>` : ''}
+  <div class="cd">
+    <div class="ct"><i class="fas fa-link"></i>لینک سابسکرایشن</div>
+    <div class="lsec"><div class="litem"><div class="licon"><i class="fas fa-rss"></i></div><input class="linp" readonly value="${subUrl}" onclick="this.select()"><button class="cbtn" onclick="cp(this,'${subUrl}')">کپی</button></div></div>
   </div>
-
-  <div class="card">
-    <h3>تعداد ریکوئست امروز</h3>
-    <div class="row"><span class="l">استفاده‌شده</span><span class="v">${dailyUsed.toLocaleString('fa-IR')}</span></div>
-    <div class="row"><span class="l">سقف مجاز</span><span class="v">${dailyLimit > 0 ? dailyLimit.toLocaleString('fa-IR') : 'نامحدود'}</span></div>
-    ${dailyLimit > 0 ? `<div class="bar"><span style="width:${dailyPct}%;background:${dailyPct>=90?'#e25858':'#FFD54F'}\\\"></span></div><div class="barlabel"><span>${dailyPct}٪ استفاده‌شده</span><span>${Math.max(0,dailyLimit-dailyUsed).toLocaleString('fa-IR')} باقی‌مانده</span></div><div style="font-size:10px;color:#666;margin-top:6px;\\\">هر روز خودکار صفر می‌شود</div>` : ''}
+  <div class="cd">
+    <div class="ct"><i class="fas fa-terminal"></i>کانفیگ مستقیم</div>
+    <div class="lsec"><div class="litem"><div class="licon" style="background:rgba(52,211,153,.1);color:var(--success)"><i class="fas fa-code"></i></div><input class="linp" readonly value="${configLink}" onclick="this.select()"><button class="cbtn" onclick="cp(this,'${configLink}')">کپی</button></div></div>
   </div>
-
-  <div class="card">
-    <h3>لینک سابسکرایشن (برای اپلیکیشن VPN)</h3>
-    <div class="linkbox">
-      <input readonly value="${subUrl}" onclick="this.select()">
-      <button class="copybtn" onclick="copyText('${subUrl}')">کپی</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3>کانفیگ مستقیم (تک‌کاربره)</h3>
-    <div class="linkbox">
-      <input readonly value="${configLink}" onclick="this.select()">
-      <button class="copybtn" onclick="copyText('${configLink}')">کپی</button>
-    </div>
-  </div>
-
-  <div class="foot">این لینک را در اختیار دیگران قرار ندهید</div>
+  <div class="ft"><div class="ftb">Hadi Panel <span class="dt">•</span> امن و سریع</div></div>
 </div>
-<div class="toast" id="toast">کپی شد</div>
+<div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastText">کپی شد</span></div>
 <script>
-function copyText(t){
-  navigator.clipboard.writeText(t).then(()=>{
-    const el = document.getElementById('toast');
-    el.classList.add('show');
-    setTimeout(()=>el.classList.remove('show'), 1500);
-  });
-}
+function cp(btn,text){navigator.clipboard.writeText(text).then(()=>{btn.textContent='کپی شد ✓';btn.classList.add('copied');const t=document.getElementById('toast');t.classList.add('show');setTimeout(()=>{t.classList.remove('show');btn.textContent='کپی';btn.classList.remove('copied')},2000)})}
 </script>
 </body>
 </html>`;
@@ -1727,6 +1865,11 @@ export default {
       const subMatch = url.pathname.match(/^\/sub\/([0-9a-f-]{36})$/);
       if (subMatch) {
         return handleSubscription(request, env, subMatch[1]);
+      }
+
+      // Telegram Webhook
+      if (url.pathname === '/tg-webhook') {
+        return handleTelegramWebhook(request, env);
       }
 
       // API مدیریتی
