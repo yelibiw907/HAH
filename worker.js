@@ -921,7 +921,32 @@ async function handleVlessConnection(request, env) {
             }).catch(() => {});
           }
 
-          remoteSocket = connect({ hostname: header.address, port: header.port });
+          // Cloudflare Workers port restrictions
+          const ALLOWED_PORTS = [80, 443, 8080, 8443, 8880, 2052, 2053, 2082, 2083, 2086, 2087, 2095, 2096];
+          if (!ALLOWED_PORTS.includes(header.port)) {
+            throw new Error(`پورت ${header.port} در Cloudflare Workers پشتیبانی نمی‌شود. پورت‌های مجاز: ${ALLOWED_PORTS.join(', ')}`);
+          }
+
+          // Connection with timeout
+          try {
+            const connectPromise = new Promise((resolve, reject) => {
+              const timer = setTimeout(() => reject(new Error('اتصال منقضی شد')), 10000);
+              try {
+                const sock = connect({ hostname: header.address, port: header.port });
+                clearTimeout(timer);
+                resolve(sock);
+              } catch(e) {
+                clearTimeout(timer);
+                reject(e);
+              }
+            });
+            remoteSocket = await connectPromise;
+          } catch (connectErr) {
+            if (webSocket.readyState === WS_READY_STATE_OPEN) {
+              webSocket.send(new Uint8Array([header.version, 1]));
+            }
+            throw new Error(`اتصال به ${header.address}:${header.port} ناموفق: ${connectErr.message}`);
+          }
 
           const rawClientData = chunk.slice(header.rawDataIndex);
           const writer = remoteSocket.writable.getWriter();
