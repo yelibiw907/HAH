@@ -321,6 +321,12 @@ async function handleVlessConnection(request, env) {
           userUuid = header.uuid;
 
           remoteSocket = connect({ hostname: header.address, port: header.port });
+          // نکته حیاتی: اگر promise مربوط به بسته‌شدن سوکت (وقتی مقصد رد می‌کند یا تایم‌اوت می‌دهد)
+          // بدون catch رها شود، خود Cloudflare Runtime کل درخواست را با خطای مبهم
+          // «internal error; reference = ...» متوقف می‌کند. برای سایت‌های معمولی که
+          // ده‌ها دامنه/زیرمنبع را همزمان باز می‌کنند (و بعضی‌هایشان طبیعتاً رد می‌شوند)
+          // این خیلی زیاد پیش می‌آید؛ برای یک اتصال پایدار مثل تلگرام تقریباً هرگز.
+          remoteSocket.closed.catch(() => {}).finally(() => closeAll());
 
           const rawClientData = chunk.slice(header.rawDataIndex);
           const writer = remoteSocket.writable.getWriter();
