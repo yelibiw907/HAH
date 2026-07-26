@@ -332,7 +332,6 @@ async function checkExpiredUsers(env) {
 
     const users = await listUsers(env);
     let disabledCount = 0;
-    let resetCount = 0;
 
     for (const user of users) {
       if (user.enabled && user.expireAt && new Date(user.expireAt).getTime() < Date.now()) {
@@ -347,29 +346,11 @@ async function checkExpiredUsers(env) {
         await fireWebhook(env, 'user_expired', { uuid: user.uuid, name: user.name });
         disabledCount++;
       }
-
-      // Feature 6: Monthly/Weekly Auto-Reset Traffic
-      if (user.resetSchedule && user.resetSchedule !== 'none') {
-        const lastReset = user.lastTrafficReset ? new Date(user.lastTrafficReset).getTime() : 0;
-        const now = Date.now();
-        const resetInterval = user.resetSchedule === 'monthly' ? 30 * 86400000 : 7 * 86400000;
-        if (now - lastReset > resetInterval) {
-          user.trafficUsedBytes = 0;
-          user.lastTrafficReset = new Date().toISOString();
-          await saveUser(env, user);
-          await logActivity(env, {
-            uuid: user.uuid,
-            action: 'traffic_reset',
-            detail: `ترافیک کاربر «${user.name}» به‌صورت خودکار (${user.resetSchedule === 'monthly' ? 'ماهانه' : 'هفتگی'}) صفر شد`,
-          });
-          resetCount++;
-        }
-      }
     }
 
     await env.VLESS_USERS.put('config:lastExpireCheck', String(Date.now()));
-    if (disabledCount > 0 || resetCount > 0) {
-      console.log(`checkExpiredUsers: disabled ${disabledCount}, auto-reset ${resetCount} users`);
+    if (disabledCount > 0) {
+      console.log(`checkExpiredUsers: disabled ${disabledCount} expired users`);
     }
   } catch(e) {
     console.error('checkExpiredUsers error:', e);
@@ -618,39 +599,6 @@ async function generate2FASecret() {
   return base32Encode(bytes);
 }
 
-// ---------- Feature 4: Brute-Force Login Protection ----------
-const loginAttempts = new Map(); // IP -> { count, firstAttempt, blockedUntil }
-const BF_MAX_ATTEMPTS = 5;
-const BF_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
-const BF_BLOCK_MS = 15 * 60 * 1000; // 15 minutes
-
-function checkBruteForce(ip) {
-  const now = Date.now();
-  const record = loginAttempts.get(ip);
-
-  // Check if currently blocked
-  if (record && record.blockedUntil && now < record.blockedUntil) {
-    const remainingSec = Math.ceil((record.blockedUntil - now) / 1000);
-    return { blocked: true, remainingAttempts: 0, blockTimeRemaining: remainingSec, message: `مسدود شده - ${remainingSec} ثانیه باقی مانده` };
-  }
-
-  // Reset if window expired
-  if (!record || (now - record.firstAttempt) > BF_WINDOW_MS) {
-    loginAttempts.set(ip, { count: 1, firstAttempt: now, blockedUntil: null });
-    return { blocked: false, remainingAttempts: BF_MAX_ATTEMPTS - 1, message: '' };
-  }
-
-  // Increment count
-  record.count++;
-  if (record.count >= BF_MAX_ATTEMPTS) {
-    record.blockedUntil = now + BF_BLOCK_MS;
-    loginAttempts.set(ip, record);
-    return { blocked: true, remainingAttempts: 0, blockTimeRemaining: Math.ceil(BF_BLOCK_MS / 1000), message: 'بیش از حد مجاز تلاش شد - ۱۵ دقیقه مسدود شد' };
-  }
-
-  return { blocked: false, remainingAttempts: BF_MAX_ATTEMPTS - record.count, message: '' };
-}
-
 // ---------- Rate Limiting ----------
 const RATE_LIMIT_MAX = 60;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -830,38 +778,6 @@ async function decrementActiveConnections(env, uuid) {
   return newCount;
 }
 
-// ---------- Feature 10: ISP Profile Auto-Optimization ----------
-const ISP_PROFILES = {
-  irancell: { name: 'Irancell', fingerprint: 'chrome', tlsFragment: true },
-  mci: { name: 'MCI (Hamrah-e-Aval)', fingerprint: 'firefox', tlsFragment: false },
-  rightel: { name: 'Rightel', fingerprint: 'safari', tlsFragment: true },
-  default: { name: 'Default', fingerprint: 'random', tlsFragment: false },
-};
-
-// ---------- Feature 1: Multi-Protocol Helpers ----------
-// Trojan protocol detection: SHA224 of password + "\r\n"
-async function sha224(text) {
-  const data = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest('SHA-224', data);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function buildTrojanUri(uuid, hostName, name, password) {
-  const params = new URLSearchParams({
-    security: 'tls',
-    sni: hostName,
-    type: 'ws',
-    host: hostName,
-    path: '/vless-ws',
-  });
-  return `trojan://${password}@${hostName}:443?${params.toString()}#${encodeURIComponent(name)}`;
-}
-
-function buildShadowsocksUri(hostName, name, port, method, password) {
-  const userInfo = btoa(`${method}:${password}`);
-  return `ss://${userInfo}@${hostName}:${port}#${encodeURIComponent(name)}`;
-}
-
 // ---------- Feature 4: Bandwidth limiting helpers ----------
 // Returns bytes allowed in current window (1 second). Returns Infinity if no limit.
 function getBytesAllowed(speedMBps) {
@@ -871,7 +787,6 @@ function getBytesAllowed(speedMBps) {
 
 // ---------- هسته اصلی پروکسی VLESS ----------
 async function handleVlessConnection(request, env) {
-  // TCP connect via cloudflare:sockets
   const webSocketPair = new WebSocketPair();
   const [client, webSocket] = Object.values(webSocketPair);
   webSocket.accept();
@@ -886,10 +801,6 @@ async function handleVlessConnection(request, env) {
   let vlessHeaderSent = false;
   let connectionStartTime = null;
   let lastDestination = null;
-  // Feature 8: Upload speed limit tracking
-  let ulLimit = Infinity;
-  let ulBytesThisSecond = 0;
-  let ulWindowStart = Date.now();
 
   const FLUSH_INTERVAL_MS = 30000;
   const FLUSH_BYTES_THRESHOLD = 8 * 1024 * 1024;
@@ -936,19 +847,8 @@ async function handleVlessConnection(request, env) {
       new WritableStream({
         async write(chunk) {
           if (remoteSocket) {
-            // Feature 4+8: Bandwidth limiting (upload direction - client to remote)
-            if (ulLimit < Infinity) {
-              ulBytesThisSecond += chunk.byteLength;
-              const ulElapsed = Date.now() - ulWindowStart;
-              if (ulElapsed < 1000 && ulBytesThisSecond >= ulLimit) {
-                await new Promise(resolve => setTimeout(resolve, 1000 - ulElapsed));
-                ulBytesThisSecond = 0;
-                ulWindowStart = Date.now();
-              } else if (ulElapsed >= 1000) {
-                ulBytesThisSecond = chunk.byteLength;
-                ulWindowStart = Date.now();
-              }
-            }
+            // Feature 4: Bandwidth limiting (upload direction - client to remote)
+            // We track bytes per second and add delay if needed
             const writer = remoteSocket.writable.getWriter();
             await writer.write(chunk);
             usageBytes += chunk.byteLength;
@@ -1068,8 +968,6 @@ async function handleVlessConnection(request, env) {
           let dlBytesThisSecond = 0;
           let dlWindowStart = Date.now();
           const dlLimit = getBytesAllowed(user.downloadSpeedMBps);
-          // Feature 8: Set upload speed limit
-          ulLimit = getBytesAllowed(user.uploadSpeedMBps);
 
           remoteSocket.readable
             .pipeTo(
@@ -1248,15 +1146,10 @@ async function handleApi(request, env, url) {
   if (path === '/api/login' && request.method === 'POST') {
     try {
       const body = await request.json().catch(() => ({}));
-      const bfResult = checkBruteForce(clientIP);
-      if (bfResult.blocked) {
-        return errorResponse(bfResult.message, 429);
-      }
       if (body.password === env.ADMIN_PASSWORD) {
-        loginAttempts.delete(clientIP); // Reset on success
         const token = await makeSessionToken(env);
         await logActivity(env, { action: 'login', detail: 'ورود موفق مدیر' });
-        return new Response(JSON.stringify({ ok: true, remainingAttempts: bfResult.remainingAttempts }), {
+        return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: {
             'content-type': 'application/json',
@@ -1264,8 +1157,8 @@ async function handleApi(request, env, url) {
           },
         });
       }
-      await logActivity(env, { action: 'login_failed', detail: `تلاش ناموفق ورود (IP: ${clientIP})` });
-      return errorResponse(`رمز عبور اشتباه است. ${BF_MAX_ATTEMPTS - (loginAttempts.get(clientIP)?.count || 0)} تلاش باقی‌مانده`, 401);
+      await logActivity(env, { action: 'login_failed', detail: 'تلاش ناموفق ورود' });
+      return errorResponse('رمز عبور اشتباه است', 401);
     } catch (e) {
       return errorResponse('خطا در پردازش درخواست', 400);
     }
@@ -1330,16 +1223,6 @@ async function handleApi(request, env, url) {
       ]);
       const activeUsers = users.filter((u) => isUserAllowed(u).ok).length;
       const totalTrafficUsed = users.reduce((sum, u) => sum + (u.trafficUsedBytes || 0), 0);
-      // Feature 1: Calculate real protocol breakdown
-      const protocolBreakdown = { VLESS: 0, TROJAN: 0, SHADOWSOCKS: 0, OTHER: 0 };
-      for (const u of users) {
-        const protos = u.protocols || ['vless'];
-        for (const p of protos) {
-          const key = p.toUpperCase();
-          if (protocolBreakdown[key] !== undefined) protocolBreakdown[key]++;
-          else protocolBreakdown.OTHER++;
-        }
-      }
       return jsonResponse({
         ok: true,
         requestStats,
@@ -1348,7 +1231,7 @@ async function handleApi(request, env, url) {
         activeUsers,
         totalUsers: users.length,
         totalTrafficUsed,
-        protocolBreakdown,
+        protocolBreakdown: { VLESS: 100, VMESS: 0, TROJAN: 0, OTHER: 0 },
         version: '4.0.0',
       });
     } catch (e) {
@@ -1379,13 +1262,6 @@ async function handleApi(request, env, url) {
         expireAt: body.expireAt || null,
         enabled: true,
         createdAt: new Date().toISOString(),
-        // Feature 1: Multi-protocol support
-        protocols: body.protocols || ['vless'],
-        // Feature 6: Traffic reset schedule
-        resetSchedule: body.resetSchedule || 'none',
-        lastTrafficReset: null,
-        // Feature 10: ISP profile
-        isp: body.isp || 'default',
         // Feature 3: Concurrent connection limit
         maxConcurrent: Number(body.maxConcurrent) || 0,
         // Feature 4: Bandwidth limiting
@@ -1425,12 +1301,6 @@ async function handleApi(request, env, url) {
       if (body.expireAt !== undefined) existing.expireAt = body.expireAt;
       if (body.enabled !== undefined) existing.enabled = !!body.enabled;
       if (body.resetTraffic) existing.trafficUsedBytes = 0;
-      // Feature 1
-      if (body.protocols !== undefined) existing.protocols = body.protocols;
-      // Feature 6
-      if (body.resetSchedule !== undefined) existing.resetSchedule = body.resetSchedule;
-      // Feature 10
-      if (body.isp !== undefined) existing.isp = body.isp;
       // Feature 3
       if (body.maxConcurrent !== undefined) existing.maxConcurrent = Number(body.maxConcurrent);
       // Feature 4
@@ -1800,187 +1670,6 @@ async function handleApi(request, env, url) {
     }
   }
 
-  // ---- Feature 5: Bulk CSV Import ----
-  if (path === '/api/import' && request.method === 'POST') {
-    try {
-      const body = await request.json().catch(() => ({}));
-      const csvText = body.csv;
-      if (!csvText) return errorResponse('داده CSV الزامی است', 400);
-      const lines = csvText.trim().split('\n');
-      const created = [];
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line || (i === 0 && line.toLowerCase().startsWith('name'))) continue; // skip header
-        const parts = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
-        const name = parts[0] || `کاربر ${i}`;
-        const uuid = parts[1] || generateUUID();
-        const trafficGB = Number(parts[2]) || 0;
-        const expireDays = Number(parts[3]) || 0;
-        const protocol = parts[4] || 'vless';
-        const user = {
-          uuid,
-          name,
-          trafficLimitGB: trafficGB,
-          trafficUsedBytes: 0,
-          dailyRequestLimit: 0,
-          expireAt: expireDays > 0 ? new Date(Date.now() + expireDays * 86400000).toISOString() : null,
-          enabled: true,
-          createdAt: new Date().toISOString(),
-          protocols: [protocol],
-          resetSchedule: 'none',
-          lastTrafficReset: null,
-          isp: 'default',
-          maxConcurrent: 0,
-          downloadSpeedMBps: 0,
-          uploadSpeedMBps: 0,
-          ipWhitelist: [],
-          ipBlacklist: [],
-        };
-        await saveUser(env, user);
-        created.push({ uuid: user.uuid, name: user.name });
-      }
-      await logActivity(env, { action: 'import_csv', detail: `وارد کردن ${created.length} کاربر از CSV` });
-      return jsonResponse({ ok: true, count: created.length, users: created });
-    } catch (e) {
-      return errorResponse('خطا در وارد کردن CSV', 500);
-    }
-  }
-
-  // ---- Feature 6: Auto-Reset config ----
-  if (path === '/api/config/reset-schedule' && request.method === 'PUT') {
-    try {
-      const body = await request.json().catch(() => ({}));
-      if (body.schedule) await env.VLESS_USERS.put('config:globalResetSchedule', body.schedule);
-      return jsonResponse({ ok: true });
-    } catch(e) {
-      return errorResponse('خطا در ذخیره تنظیمات', 500);
-    }
-  }
-
-  // ---- Feature 7: Backup & Restore ----
-  if (path === '/api/backup' && request.method === 'POST') {
-    try {
-      const users = await listUsers(env);
-      const configKeys = ['config:language', 'config:theme', 'config:subtemplate', 'config:2fa_secret', 'config:isp'];
-      const configs = {};
-      for (const key of configKeys) {
-        const val = await env.VLESS_USERS.get(key);
-        if (val) configs[key] = val;
-      }
-      await logActivity(env, { action: 'backup', detail: `تهیه نسخه پشتیبان از ${users.length} کاربر` });
-      return new Response(JSON.stringify({ version: '4.0', timestamp: new Date().toISOString(), users, configs }, null, 2), {
-        status: 200,
-        headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'content-disposition': `attachment; filename="hadi-panel-backup-${todayStr()}.json"`,
-        },
-      });
-    } catch (e) {
-      return errorResponse('خطا در تهیه نسخه پشتیبان', 500);
-    }
-  }
-
-  if (path === '/api/restore' && request.method === 'POST') {
-    try {
-      const body = await request.json().catch(() => ({}));
-      if (!body.users || !Array.isArray(body.users)) {
-        return errorResponse('فرمت داده نامعتبر', 400);
-      }
-      // Delete all existing users
-      const existingList = await env.VLESS_USERS.list({ prefix: 'user:' });
-      for (const key of existingList.keys) {
-        await env.VLESS_USERS.delete(key.name);
-      }
-      // Restore users
-      for (const user of body.users) {
-        await saveUser(env, user);
-      }
-      // Restore configs
-      if (body.configs) {
-        for (const [key, val] of Object.entries(body.configs)) {
-          await env.VLESS_USERS.put(key, val);
-        }
-      }
-      await logActivity(env, { action: 'restore', detail: `بازیابی ${body.users.length} کاربر از نسخه پشتیبان` });
-      return jsonResponse({ ok: true, count: body.users.length });
-    } catch (e) {
-      return errorResponse('خطا در بازیابی', 500);
-    }
-  }
-
-  // ---- Feature 9: Active Connections ----
-  if (path === '/api/connections/active' && request.method === 'GET') {
-    try {
-      const list = await env.VLESS_USERS.list({ prefix: 'active:' });
-      const activeConnections = [];
-      for (const key of list.keys) {
-        const uuid = key.name.replace('active:', '');
-        const count = parseInt(await env.VLESS_USERS.get(key.name), 10) || 0;
-        if (count > 0) {
-          const user = await getUser(env, uuid);
-          activeConnections.push({
-            uuid,
-            name: user?.name || 'ناشناخته',
-            activeCount: count,
-          });
-        }
-      }
-      return jsonResponse({ ok: true, connections: activeConnections, total: activeConnections.reduce((s, c) => s + c.activeCount, 0) });
-    } catch (e) {
-      return errorResponse('خطا در دریافت اتصالات فعال', 500);
-    }
-  }
-
-  // ---- Feature 10: ISP Profile Config ----
-  if (path === '/api/config/isp' && request.method === 'GET') {
-    try {
-      const selected = await env.VLESS_USERS.get('config:isp') || 'default';
-      return jsonResponse({ ok: true, selected, profiles: ISP_PROFILES });
-    } catch(e) {
-      return jsonResponse({ ok: true, selected: 'default', profiles: ISP_PROFILES });
-    }
-  }
-
-  if (path === '/api/config/isp' && request.method === 'PUT') {
-    try {
-      const body = await request.json().catch(() => ({}));
-      if (body.isp && ISP_PROFILES[body.isp]) {
-        await env.VLESS_USERS.put('config:isp', body.isp);
-        return jsonResponse({ ok: true, selected: body.isp });
-      }
-      return errorResponse('پروفایل ISP نامعتبر', 400);
-    } catch(e) {
-      return errorResponse('خطا در ذخیره پروفایل ISP', 500);
-    }
-  }
-
-  // ---- Feature 3: Path Disguise Config ----
-  if (path === '/api/config/path-disguise' && request.method === 'GET') {
-    try {
-      const raw = await env.VLESS_USERS.get('config:path_disguise');
-      const paths = raw ? JSON.parse(raw) : { admin: '', login: '', sub: '' };
-      return jsonResponse({ ok: true, paths });
-    } catch(e) {
-      return jsonResponse({ ok: true, paths: { admin: '', login: '', sub: '' } });
-    }
-  }
-
-  if (path === '/api/config/path-disguise' && request.method === 'POST') {
-    try {
-      const body = await request.json().catch(() => ({}));
-      const genHex = () => Math.random().toString(16).slice(2, 8);
-      const paths = {
-        admin: body.admin || '/' + genHex(),
-        login: body.login || '/' + genHex(),
-        sub: body.sub || '/' + genHex(),
-      };
-      await env.VLESS_USERS.put('config:path_disguise', JSON.stringify(paths));
-      return jsonResponse({ ok: true, paths });
-    } catch(e) {
-      return errorResponse('خطا در تولید مسیر', 500);
-    }
-  }
-
   return errorResponse('مسیر نامعتبر', 404);
 }
 
@@ -2142,25 +1831,14 @@ async function handleSubscription(request, env, uuid) {
   const user = await getUser(env, uuid);
   const allowed = isUserAllowed(user);
   const hostName = new URL(request.url).hostname;
-  const url = new URL(request.url);
 
   const acceptHeader = request.headers.get('accept') || '';
   const wantsHtml = acceptHeader.includes('text/html');
 
-  // Feature 2: Check format query param
-  const format = url.searchParams.get('format') || 'base64';
-
   if (!user) {
     if (wantsHtml) return new Response('کاربر یافت نشد', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
-    if (format === 'clash' || format === 'singbox') {
-      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' } });
-    }
     return new Response('', { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   }
-
-  // Feature 10: Get ISP profile for this user
-  const userIsp = user.isp || 'default';
-  const ispProfile = ISP_PROFILES[userIsp] || ISP_PROFILES.default;
 
   const link = buildVlessUriCached(user, hostName);
 
@@ -2183,127 +1861,12 @@ async function handleSubscription(request, env, uuid) {
   if (!allowed.ok) {
     return new Response('', { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   }
-
-  // Feature 1: Build links for all enabled protocols
-  const protocols = user.protocols || ['vless'];
-  const links = [];
-  for (const proto of protocols) {
-    if (proto === 'vless') {
-      links.push(link);
-    } else if (proto === 'trojan') {
-      // Generate a password based on UUID for Trojan
-      const trojanPassword = user.uuid.replace(/-/g, '').slice(0, 16);
-      links.push(buildTrojanUri(user.uuid, hostName, user.name, trojanPassword));
-    } else if (proto === 'shadowsocks') {
-      links.push(buildShadowsocksUri(hostName, user.name, 443, 'aes-256-gcm', user.uuid.replace(/-/g, '').slice(0, 16)));
-    }
-  }
-
-  // Feature 2: Format selection
-  let body;
+  const body = btoa(unescape(encodeURIComponent(link + '\n')));
   const headers = { 'content-type': 'text/plain; charset=utf-8' };
   const used = user.trafficUsedBytes || 0;
   const total = user.trafficLimitGB > 0 ? user.trafficLimitGB * 1024 * 1024 * 1024 : 0;
   const expire = user.expireAt ? Math.floor(new Date(user.expireAt).getTime() / 1000) : 0;
   headers['subscription-userinfo'] = `upload=0; download=${used}; total=${total}; expire=${expire}`;
-
-  if (format === 'clash') {
-    headers['content-type'] = 'application/yaml; charset=utf-8';
-    const proxies = links.map((l, i) => {
-      if (l.startsWith('vless://')) {
-        return `  - name: "${user.name}-V${i+1}"
-    type: vless
-    server: ${hostName}
-    port: 443
-    uuid: ${user.uuid}
-    tls: true
-    udp: false
-    network: ws
-    ws-opts:
-      path: /vless-ws
-      headers:
-        Host: ${hostName}
-    servername: ${hostName}`;
-      }
-      if (l.startsWith('trojan://')) {
-        const trojanPw = user.uuid.replace(/-/g, '').slice(0, 16);
-        return `  - name: "${user.name}-T${i+1}"
-    type: trojan
-    server: ${hostName}
-    port: 443
-    password: ${trojanPw}
-    tls: true
-    udp: false
-    network: ws
-    ws-opts:
-      path: /vless-ws
-      headers:
-        Host: ${hostName}
-    servername: ${hostName}`;
-      }
-      return `  - name: "${user.name}-SS"
-    type: ss
-    server: ${hostName}
-    port: 443
-    cipher: aes-256-gcm
-    password: ${user.uuid.replace(/-/g, '').slice(0, 16)}`;
-    }).join('\n');
-
-    body = `mixed-port: 7890
-allow-lan: false
-mode: rule
-log-level: info
-proxies:
-${proxies}
-proxy-groups:
-  - name: "Auto"
-    type: url-test
-    proxies:
-${links.map((_, i) => `      - "${user.name}-${protocols[i]?.[0]?.toUpperCase() || 'V'}${i+1}"`).join('\n')}
-rules:
-  - MATCH,Auto`;
-  } else if (format === 'singbox') {
-    headers['content-type'] = 'application/json; charset=utf-8';
-    const outbounds = links.map((l, i) => {
-      if (l.startsWith('vless://')) {
-        return {
-          type: 'vless',
-          tag: `${user.name}-V${i+1}`,
-          server: hostName,
-          server_port: 443,
-          uuid: user.uuid,
-          tls: { enabled: true, server_name: hostName },
-          transport: { type: 'ws', path: '/vless-ws', headers: { Host: hostName } },
-        };
-      }
-      if (l.startsWith('trojan://')) {
-        return {
-          type: 'trojan',
-          tag: `${user.name}-T${i+1}`,
-          server: hostName,
-          server_port: 443,
-          password: user.uuid.replace(/-/g, '').slice(0, 16),
-          tls: { enabled: true, server_name: hostName },
-          transport: { type: 'ws', path: '/vless-ws', headers: { Host: hostName } },
-        };
-      }
-      return {
-        type: 'shadowsocks',
-        tag: `${user.name}-SS`,
-        server: hostName,
-        server_port: 443,
-        method: 'aes-256-gcm',
-        password: user.uuid.replace(/-/g, '').slice(0, 16),
-      };
-    });
-
-    body = JSON.stringify({ outbounds: [{ type: 'selector', tag: 'auto', outbounds: outbounds.map(o => o.tag) }, ...outbounds] }, null, 2);
-  } else if (format === 'raw') {
-    body = links.join('\n');
-  } else {
-    // Default: base64
-    body = btoa(unescape(encodeURIComponent(links.join('\n') + '\n')));
-  }
 
   return new Response(body, { status: 200, headers });
 }
@@ -2314,19 +1877,8 @@ export default {
       const url = new URL(request.url);
       const upgradeHeader = request.headers.get('Upgrade');
 
-      // Feature 3: Path disguise routing
-      const disguiseRaw = await env.VLESS_USERS.get('config:path_disguise');
-      const disguisedPaths = disguiseRaw ? JSON.parse(disguiseRaw) : {};
-
-      let pathname = url.pathname;
-      if (disguisedPaths.admin && pathname === disguisedPaths.admin) pathname = '/admin';
-      if (disguisedPaths.login && pathname === disguisedPaths.login) pathname = '/login';
-      if (disguisedPaths.sub && pathname.startsWith(disguisedPaths.sub + '/')) {
-        pathname = pathname.replace(disguisedPaths.sub, '/sub');
-      }
-
       // اتصال VLESS از طریق WebSocket
-      if (upgradeHeader === 'websocket' && (url.pathname === '/vless-ws' || pathname === '/vless-ws')) {
+      if (upgradeHeader === 'websocket' && url.pathname === '/vless-ws') {
         try {
           return await handleVlessConnection(request, env);
         } catch (err) {
@@ -2335,18 +1887,18 @@ export default {
       }
 
       // لینک سابسکرایشن هر کاربر
-      const subMatch = pathname.match(/^\/sub\/([0-9a-f-]{36})$/);
+      const subMatch = url.pathname.match(/^\/sub\/([0-9a-f-]{36})$/);
       if (subMatch) {
         return handleSubscription(request, env, subMatch[1]);
       }
 
       // Telegram Webhook
-      if (pathname === '/tg-webhook') {
+      if (url.pathname === '/tg-webhook') {
         return handleTelegramWebhook(request, env);
       }
 
       // API مدیریتی
-      if (pathname.startsWith('/api/')) {
+      if (url.pathname.startsWith('/api/')) {
         return handleApi(request, env, url);
       }
 
