@@ -8,7 +8,12 @@
 //       IP whitelist/blacklist, 2FA, custom sub page, i18n, theme toggle)
 // =============================================================
 
-// Using request.fetcher.connect() for better compatibility
+// Try request.fetcher.connect() first, fallback to cloudflare:sockets
+let _cfSocketsConnect = null;
+try {
+  const mod = await import('cloudflare:sockets');
+  _cfSocketsConnect = mod.connect;
+} catch(e) {}
 
 // ---------- تنظیمات ثابت ----------
 const WS_READY_STATE_OPEN = 1;
@@ -871,14 +876,16 @@ function getBytesAllowed(speedMBps) {
 
 // ---------- هسته اصلی پروکسی VLESS ----------
 async function handleVlessConnection(request, env) {
-  // Get the TCP connect function from request.fetcher (works better than cloudflare:sockets)
+  // Get the TCP connect function - try request.fetcher first, fallback to cloudflare:sockets
   const fetcher = request?.fetcher;
-  const connectTCP = (options) => {
-    if (fetcher && typeof fetcher.connect === 'function') {
-      return fetcher.connect(options);
-    }
-    throw new Error('request.fetcher.connect unavailable');
-  };
+  let connectTCP;
+  if (fetcher && typeof fetcher.connect === 'function') {
+    connectTCP = (options) => fetcher.connect(options);
+  } else if (_cfSocketsConnect) {
+    connectTCP = (options) => _cfSocketsConnect(options);
+  } else {
+    throw new Error('No TCP connect method available');
+  }
   const webSocketPair = new WebSocketPair();
   const [client, webSocket] = Object.values(webSocketPair);
   webSocket.accept();
