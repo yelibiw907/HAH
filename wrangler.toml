@@ -1,0 +1,50 @@
+name = "vless-vpn-dashboard"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# نام واقعی Worker شما در کلودفلر
+[vars]
+WORKER_NAME = "hah"
+
+# فایل‌های استاتیک داشبورد (Hadi Panel) از این پوشه سرو می‌شوند
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# پس از ساخت KV namespace با دستور زیر، id واقعی را اینجا جایگزین کنید:
+# npx wrangler kv namespace create VLESS_USERS
+[[kv_namespaces]]
+binding = "VLESS_USERS"
+id = "c636ec79f8ed4a96adf81100530f45cd"
+
+# این‌ها را به صورت Secret تنظیم کنید (در این فایل ننویسید):
+# npx wrangler secret put ADMIN_PASSWORD
+# npx wrangler secret put CF_API_TOKEN
+# npx wrangler secret put CF_ACCOUNT_ID
+
+# ========== Features v4 — New Environment Variables ==========
+
+# Feature 5: Telegram Bot Integration
+# پس از ساخت ربات تلگرام از @BotFather، توکن و آیدی چت را اینجا تنظیم کنید:
+# npx wrangler secret put BOT_TOKEN
+# npx wrangler secret put BOT_CHAT_ID
+
+# Feature 6: Webhook Notifications
+# آدرس webhook برای ارسال رویدادها (مثلاً Discord, Slack, یا هر سرویس دیگر):
+# npx wrangler secret put WEBHOOK_URL
+
+# Feature 9: Bandwidth sampling is stored in KV automatically
+# No additional env vars needed.
+
+# Feature 11: Two-Factor Authentication (TOTP)
+# 2FA secrets are stored in KV (key: config:2fa_secret)
+# No additional env vars needed.
+
+# Feature 12: Custom subscription template
+# Templates are stored in KV (key: config:subtemplate)
+# No additional env vars needed.
+
+# Feature 13 & 14: Multi-language and Theme
+# Preferences are stored client-side (localStorage) + optionally in KV
+# No additional env vars needed.
