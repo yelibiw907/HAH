@@ -1427,6 +1427,7 @@ function clientRow(c, withActions=true){
         ${withActions ? `<td><div class="row-actions">
             <button class="act-btn" title="${currentLang==='en'?'Edit':'ویرایش'}" data-uuid="${c.uuid}"><i class="fas fa-pen"></i></button>
             <button class="act-btn" title="${currentLang==='en'?'Copy Link':'کپی لینک'}" data-uuid="${c.uuid}"><i class="fas fa-link"></i></button>
+            <button class="act-btn" title="${currentLang==='en'?'Subscription':'سابسکرایشن'}" data-uuid="${c.uuid}" data-act="sub"><i class="fas fa-rss"></i></button>
             <button class="act-btn" title="QR" data-uuid="${c.uuid}" data-act="qr"><i class="fas fa-qrcode"></i></button>
             <button class="act-btn" title="${currentLang==='en'?'Download':'دانلود'}" data-uuid="${c.uuid}" data-act="download"><i class="fas fa-download"></i></button>
             <button class="act-btn success" title="${currentLang==='en'?'Reset Traffic':'صفر کردن ترافیک'}" data-uuid="${c.uuid}" data-act="reset"><i class="fas fa-rotate-left"></i></button>
@@ -1482,6 +1483,13 @@ function applyClientFilters(){
             const c = clients.find(x => x.uuid === btn.dataset.uuid);
             navigator.clipboard.writeText(vlessLink(c));
             showToast(currentLang==='en'?'Link copied':'لینک اتصال کپی شد');
+        });
+    });
+    tbody.querySelectorAll('[data-act="sub"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const c = clients.find(x => x.uuid === btn.dataset.uuid);
+            navigator.clipboard.writeText(subLink(c));
+            showToast(currentLang==='en'?'Subscription link copied':'لینک سابسکرایشن کپی شد');
         });
     });
     tbody.querySelectorAll('[data-act="qr"]').forEach(btn => {
