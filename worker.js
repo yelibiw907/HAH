@@ -8,7 +8,7 @@
 //       IP whitelist/blacklist, 2FA, custom sub page, i18n, theme toggle)
 // =============================================================
 
-import { connect } from 'cloudflare:sockets';
+// Using request.fetcher.connect() for better compatibility
 
 // ---------- تنظیمات ثابت ----------
 const WS_READY_STATE_OPEN = 1;
@@ -871,6 +871,14 @@ function getBytesAllowed(speedMBps) {
 
 // ---------- هسته اصلی پروکسی VLESS ----------
 async function handleVlessConnection(request, env) {
+  // Get the TCP connect function from request.fetcher (works better than cloudflare:sockets)
+  const fetcher = request?.fetcher;
+  const connectTCP = (options) => {
+    if (fetcher && typeof fetcher.connect === 'function') {
+      return fetcher.connect(options);
+    }
+    throw new Error('request.fetcher.connect unavailable');
+  };
   const webSocketPair = new WebSocketPair();
   const [client, webSocket] = Object.values(webSocketPair);
   webSocket.accept();
@@ -1031,7 +1039,7 @@ async function handleVlessConnection(request, env) {
             const connectPromise = new Promise((resolve, reject) => {
               const timer = setTimeout(() => reject(new Error('اتصال منقضی شد')), 10000);
               try {
-                const sock = connect({ hostname: header.address, port: header.port });
+                const sock = connectTCP({ hostname: header.address, port: header.port });
                 clearTimeout(timer);
                 resolve(sock);
               } catch(e) {
