@@ -8,12 +8,7 @@
 //       IP whitelist/blacklist, 2FA, custom sub page, i18n, theme toggle)
 // =============================================================
 
-// Try request.fetcher.connect() first, fallback to cloudflare:sockets
-let _cfSocketsConnect = null;
-try {
-  const mod = await import('cloudflare:sockets');
-  _cfSocketsConnect = mod.connect;
-} catch(e) {}
+import { connect } from 'cloudflare:sockets';
 
 // ---------- تنظیمات ثابت ----------
 const WS_READY_STATE_OPEN = 1;
@@ -876,16 +871,7 @@ function getBytesAllowed(speedMBps) {
 
 // ---------- هسته اصلی پروکسی VLESS ----------
 async function handleVlessConnection(request, env) {
-  // Get the TCP connect function - try request.fetcher first, fallback to cloudflare:sockets
-  const fetcher = request?.fetcher;
-  let connectTCP;
-  if (fetcher && typeof fetcher.connect === 'function') {
-    connectTCP = (options) => fetcher.connect(options);
-  } else if (_cfSocketsConnect) {
-    connectTCP = (options) => _cfSocketsConnect(options);
-  } else {
-    throw new Error('No TCP connect method available');
-  }
+  // TCP connect via cloudflare:sockets
   const webSocketPair = new WebSocketPair();
   const [client, webSocket] = Object.values(webSocketPair);
   webSocket.accept();
@@ -1046,7 +1032,7 @@ async function handleVlessConnection(request, env) {
             const connectPromise = new Promise((resolve, reject) => {
               const timer = setTimeout(() => reject(new Error('اتصال منقضی شد')), 10000);
               try {
-                const sock = connectTCP({ hostname: header.address, port: header.port });
+                const sock = connect({ hostname: header.address, port: header.port });
                 clearTimeout(timer);
                 resolve(sock);
               } catch(e) {
