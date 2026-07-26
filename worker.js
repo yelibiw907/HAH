@@ -293,99 +293,78 @@ async function handleVlessConnection(request, env) {
     .pipeTo(
       new WritableStream({
         async write(chunk) {
-          try {
-            if (remoteSocket) {
-              const writer = remoteSocket.writable.getWriter();
-              await writer.write(chunk);
-              usageBytes += chunk.byteLength;
-              writer.releaseLock();
-              maybeEarlyFlush();
-              return;
-            }
-
-            const header = parseVlessHeader(chunk);
-            if (header.hasError) {
-              throw new Error(header.message);
-            }
-
-            const user = await getUser(env, header.uuid);
-            const allowed = isUserAllowed(user);
-            if (!allowed.ok) {
-              throw new Error('دسترسی رد شد: ' + allowed.reason);
-            }
-            if (!bumpDailyRequest(user)) {
-              throw new Error('دسترسی رد شد: محدودیت روزانه تعداد ریکوئست تمام شده');
-            }
-            // همان یک write که در پایان اتصال/هر چند ثانیه برای مصرف ترافیک انجام می‌شود،
-            // شمارنده روزانه به‌روزشده را هم با خودش ذخیره می‌کند (بدون write جداگانه).
-            await saveUser(env, user);
-            userUuid = header.uuid;
-
-            try {
-              remoteSocket = connect({ hostname: header.address, port: header.port });
-            } catch (connectErr) {
-              console.error('VLESS connect() failed for', header.address + ':' + header.port, connectErr && connectErr.message);
-              throw connectErr;
-            }
-            // فقط لاگ می‌کنیم؛ خودمان closeAll را صدا نمی‌زنیم تا در تداخل با
-            // close()/abort() طبیعی pipeTo (که همین کار را انجام می‌دهند) دوباره‌کاری/ریس ایجاد نشود.
-            remoteSocket.closed.catch((closedErr) => {
-              console.error('remoteSocket closed with error for', header.address + ':' + header.port, closedErr && closedErr.message);
-            });
-
-            const rawClientData = chunk.slice(header.rawDataIndex);
+          if (remoteSocket) {
             const writer = remoteSocket.writable.getWriter();
-            await writer.write(rawClientData);
-            usageBytes += rawClientData.byteLength;
+            await writer.write(chunk);
+            usageBytes += chunk.byteLength;
             writer.releaseLock();
-
-            // پاسخ VLESS به کلاینت (نسخه + بدون آپشن اضافه)
-            if (!vlessHeaderSent) {
-              vlessHeaderSent = true;
-              const vlessResponse = new Uint8Array([header.version, 0]);
-              if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                webSocket.send(vlessResponse);
-              }
-            }
-
-            // انتقال داده از سرور مقصد به کلاینت
-            remoteSocket.readable
-              .pipeTo(
-                new WritableStream({
-                  write(remoteChunk) {
-                    if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                      webSocket.send(remoteChunk);
-                      usageBytes += remoteChunk.byteLength;
-                      maybeEarlyFlush();
-                    }
-                  },
-                  close() { closeAll(); },
-                  abort(reason) {
-                    console.error('remote readable aborted for', header.address + ':' + header.port, reason && reason.message);
-                    closeAll();
-                  },
-                })
-              )
-              .catch((err) => {
-                console.error('pipeTo(remote→client) rejected for', header.address + ':' + header.port, err && err.message);
-                closeAll();
-              });
-          } catch (err) {
-            console.error('VLESS write() handler error:', err && err.message);
-            throw err;
+            maybeEarlyFlush();
+            return;
           }
+
+          const header = parseVlessHeader(chunk);
+          if (header.hasError) {
+            throw new Error(header.message);
+          }
+
+          const user = await getUser(env, header.uuid);
+          const allowed = isUserAllowed(user);
+          if (!allowed.ok) {
+            throw new Error('دسترسی رد شد: ' + allowed.reason);
+          }
+          if (!bumpDailyRequest(user)) {
+            throw new Error('دسترسی رد شد: محدودیت روزانه تعداد ریکوئست تمام شده');
+          }
+          // همان یک write که در پایان اتصال/هر چند ثانیه برای مصرف ترافیک انجام می‌شود،
+          // شمارنده روزانه به‌روزشده را هم با خودش ذخیره می‌کند (بدون write جداگانه).
+          await saveUser(env, user);
+          userUuid = header.uuid;
+
+          remoteSocket = connect({ hostname: header.address, port: header.port });
+          // نکته حیاتی: اگر promise مربوط به بسته‌شدن سوکت (وقتی مقصد رد می‌کند یا تایم‌اوت می‌دهد)
+          // بدون catch رها شود، خود Cloudflare Runtime کل درخواست را با خطای مبهم
+          // «internal error; reference = ...» متوقف می‌کند. برای سایت‌های معمولی که
+          // ده‌ها دامنه/زیرمنبع را همزمان باز می‌کنند (و بعضی‌هایشان طبیعتاً رد می‌شوند)
+          // این خیلی زیاد پیش می‌آید؛ برای یک اتصال پایدار مثل تلگرام تقریباً هرگز.
+          remoteSocket.closed.catch(() => {}).finally(() => closeAll());
+
+          const rawClientData = chunk.slice(header.rawDataIndex);
+          const writer = remoteSocket.writable.getWriter();
+          await writer.write(rawClientData);
+          usageBytes += rawClientData.byteLength;
+          writer.releaseLock();
+
+          // پاسخ VLESS به کلاینت (نسخه + بدون آپشن اضافه)
+          if (!vlessHeaderSent) {
+            vlessHeaderSent = true;
+            const vlessResponse = new Uint8Array([header.version, 0]);
+            if (webSocket.readyState === WS_READY_STATE_OPEN) {
+              webSocket.send(vlessResponse);
+            }
+          }
+
+          // انتقال داده از سرور مقصد به کلاینت
+          remoteSocket.readable
+            .pipeTo(
+              new WritableStream({
+                write(remoteChunk) {
+                  if (webSocket.readyState === WS_READY_STATE_OPEN) {
+                    webSocket.send(remoteChunk);
+                    usageBytes += remoteChunk.byteLength;
+                    maybeEarlyFlush();
+                  }
+                },
+                close() { closeAll(); },
+                abort() { closeAll(); },
+              })
+            )
+            .catch(() => closeAll());
         },
         close() { closeAll(); },
-        abort(reason) {
-          console.error('client readable aborted:', reason && reason.message);
-          closeAll();
-        },
+        abort() { closeAll(); },
       })
     )
-    .catch((err) => {
-      console.error('pipeTo(client→remote) rejected:', err && err.message);
-      closeAll();
-    });
+    .catch(() => closeAll());
 
   return new Response(null, { status: 101, webSocket: client });
 }
