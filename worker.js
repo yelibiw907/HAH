@@ -315,18 +315,10 @@ async function handleVlessConnection(request, env) {
           if (!bumpDailyRequest(user)) {
             throw new Error('دسترسی رد شد: محدودیت روزانه تعداد ریکوئست تمام شده');
           }
-          // همان یک write که در پایان اتصال/هر چند ثانیه برای مصرف ترافیک انجام می‌شود،
-          // شمارنده روزانه به‌روزشده را هم با خودش ذخیره می‌کند (بدون write جداگانه).
           await saveUser(env, user);
           userUuid = header.uuid;
 
           remoteSocket = connect({ hostname: header.address, port: header.port });
-          // نکته حیاتی: اگر promise مربوط به بسته‌شدن سوکت (وقتی مقصد رد می‌کند یا تایم‌اوت می‌دهد)
-          // بدون catch رها شود، خود Cloudflare Runtime کل درخواست را با خطای مبهم
-          // «internal error; reference = ...» متوقف می‌کند. برای سایت‌های معمولی که
-          // ده‌ها دامنه/زیرمنبع را همزمان باز می‌کنند (و بعضی‌هایشان طبیعتاً رد می‌شوند)
-          // این خیلی زیاد پیش می‌آید؛ برای یک اتصال پایدار مثل تلگرام تقریباً هرگز.
-          remoteSocket.closed.catch(() => {}).finally(() => closeAll());
 
           const rawClientData = chunk.slice(header.rawDataIndex);
           const writer = remoteSocket.writable.getWriter();
@@ -358,13 +350,19 @@ async function handleVlessConnection(request, env) {
                 abort() { closeAll(); },
               })
             )
-            .catch(() => closeAll());
+            .catch((err) => {
+              console.error('proxy pipe error:', err && err.message);
+              closeAll();
+            });
         },
         close() { closeAll(); },
         abort() { closeAll(); },
       })
     )
-    .catch(() => closeAll());
+    .catch((err) => {
+      console.error('client pipe error:', err && err.message);
+      closeAll();
+    });
 
   return new Response(null, { status: 101, webSocket: client });
 }
@@ -593,6 +591,9 @@ function subInfoPage(user, subUrl, configLink, statusInfo) {
   const daysLeft = user.expireAt
     ? Math.ceil((new Date(user.expireAt).getTime() - Date.now()) / 86400000)
     : null;
+  const dailyUsed = getEffectiveDailyCount(user);
+  const dailyLimit = user.dailyRequestLimit || 0;
+  const dailyPct = dailyLimit > 0 ? Math.min(100, Math.round((dailyUsed / dailyLimit) * 100)) : 0;
   const statusColor = statusInfo.ok ? '#3ddc97' : '#e25858';
   const statusText = statusInfo.ok ? 'فعال' : statusInfo.reason;
 
@@ -651,6 +652,13 @@ function subInfoPage(user, subUrl, configLink, statusInfo) {
     <h3>اعتبار زمانی</h3>
     <div class="row"><span class="l">تاریخ انقضا</span><span class="v">${expireText}</span></div>
     ${daysLeft !== null ? `<div class="row"><span class="l">${daysLeft >= 0 ? 'روزهای باقی‌مانده' : 'منقضی شده'}</span><span class="v" style="color:${daysLeft < 0 ? '#e25858' : (daysLeft <= 3 ? '#FFD54F' : '#e9e9e9')}">${daysLeft >= 0 ? daysLeft + ' روز' : Math.abs(daysLeft) + ' روز پیش'}</span></div>` : ''}
+  </div>
+
+  <div class="card">
+    <h3>تعداد ریکوئست امروز</h3>
+    <div class="row"><span class="l">استفاده‌شده</span><span class="v">${dailyUsed.toLocaleString('fa-IR')}</span></div>
+    <div class="row"><span class="l">سقف مجاز</span><span class="v">${dailyLimit > 0 ? dailyLimit.toLocaleString('fa-IR') : 'نامحدود'}</span></div>
+    ${dailyLimit > 0 ? `<div class="bar"><span style="width:${dailyPct}%;background:${dailyPct>=90?'#e25858':'#FFD54F'}"></span></div><div class="barlabel"><span>${dailyPct}٪ استفاده‌شده</span><span>${Math.max(0,dailyLimit-dailyUsed).toLocaleString('fa-IR')} باقی‌مانده</span></div><div style="font-size:10px;color:#666;margin-top:6px;">هر روز خودکار صفر می‌شود</div>` : ''}
   </div>
 
   <div class="card">
