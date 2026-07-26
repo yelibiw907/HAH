@@ -1429,7 +1429,6 @@ function clientRow(c, withActions=true){
             <button class="act-btn" title="${currentLang==='en'?'Copy Link':'کپی لینک'}" data-uuid="${c.uuid}"><i class="fas fa-link"></i></button>
             <button class="act-btn" title="${currentLang==='en'?'Subscription':'سابسکرایشن'}" data-uuid="${c.uuid}" data-act="sub"><i class="fas fa-rss"></i></button>
             <button class="act-btn" title="QR" data-uuid="${c.uuid}" data-act="qr"><i class="fas fa-qrcode"></i></button>
-            <button class="act-btn" title="${currentLang==='en'?'Download':'دانلود'}" data-uuid="${c.uuid}" data-act="download"><i class="fas fa-download"></i></button>
             <button class="act-btn success" title="${currentLang==='en'?'Reset Traffic':'صفر کردن ترافیک'}" data-uuid="${c.uuid}" data-act="reset"><i class="fas fa-rotate-left"></i></button>
             <button class="act-btn warning" title="${currentLang==='en'?'Reset Requests':'صفر کردن ریکوئست'}" data-uuid="${c.uuid}" data-act="reset-req"><i class="fas fa-arrow-rotate-left"></i></button>
             <button class="act-btn" title="Logs" data-uuid="${c.uuid}" data-act="logs"><i class="fas fa-scroll"></i></button>
@@ -1501,6 +1500,7 @@ function applyClientFilters(){
     tbody.querySelectorAll('[data-act="reset"]').forEach(btn => {
         btn.addEventListener('click', () => resetTraffic(btn.dataset.uuid));
     });
+
     tbody.querySelectorAll('[data-act="reset-req"]').forEach(btn => {
         btn.addEventListener('click', () => resetUserRequests(btn.dataset.uuid));
     });
@@ -1578,9 +1578,10 @@ function downloadConfig(uuid){
     showToast(currentLang==='en'?'Config downloaded':'کانفیگ دانلود شد');
 }
 
+
 async function resetUserRequests(uuid){
     const c = clients.find(x => x.uuid === uuid);
-    const msg = currentLang==='en' ? `Reset request counter for "${c?.name || ''}"?` : `شمارنده ریکوئست کاربر «${c?.name || ''}» صفر شود؟`;
+    const msg = currentLang==='en' ? `Reset request counter for "${c?.name || ''}"?` : `شمارنده ریکوئست کاربر «${c?.name || '' }» صفر شود؟`;
     if(!confirm(msg)) return;
     try {
         const res = await fetch('/api/users/' + uuid + '/reset-requests', { method:'PUT' });
@@ -1596,7 +1597,6 @@ async function resetUserRequests(uuid){
     }
 }
 
-/* ---------- Feature 7: Connection Logs ---------- */
 async function showConnectionLogs(uuid) {
     const c = clients.find(x => x.uuid === uuid);
     if (!c) return;
